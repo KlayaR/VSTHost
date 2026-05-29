@@ -1,4 +1,5 @@
 # VSTHost
+<img width="1100" height="780" alt="image" src="https://github.com/user-attachments/assets/013bfff2-47ea-4902-983e-50475a893911" />
 
 A lightweight, **VST3-only microphone-processing host for Windows**. It puts a single live mic through a chain of VST3 plugins — EQ, compressor, gate, de-esser, saturation, whatever you like — and sends the processed signal to your monitors and/or straight into apps like **Discord, Zoom, OBS and Teams**.
 

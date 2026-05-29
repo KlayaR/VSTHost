@@ -46,11 +46,12 @@ interface AppState {
   toggleTheme: () => void
 
   // Behavior settings (persisted)
+  startWithWindows: boolean
   startMinimized: boolean
   closeToTray: boolean
   autoBypass: boolean
   scanPaths: string[]
-  setSetting: (key: 'startMinimized' | 'closeToTray' | 'autoBypass', v: boolean) => void
+  setSetting: (key: 'startWithWindows' | 'startMinimized' | 'closeToTray' | 'autoBypass', v: boolean) => void
   setScanPaths: (paths: string[]) => void
 
   // Engine connection
@@ -137,6 +138,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme:       'dark',
   toggleTheme: () => { set(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })); schedulePersist() },
 
+  startWithWindows: false,
   startMinimized: false,
   closeToTray:    true,
   autoBypass:     false,
@@ -268,6 +270,10 @@ export const useStore = create<AppState>((set, get) => ({
   loadPreset: (id) => {
     const preset = get().presets.find(p => p.id === id)
     if (!preset) return
+    // Guard against losing unsaved tweaks when switching presets
+    if (get().presetModified && get().activePresetId && get().activePresetId !== id) {
+      if (!window.confirm('Discard unsaved changes to the current preset?')) return
+    }
     set({ activePresetId: id, presetModified: false })
     loadPresetData(preset.name).then(data => {
       if (!data) return
@@ -402,6 +408,7 @@ export const useStore = create<AppState>((set, get) => ({
     const r = data as Partial<AppState>
     set({
       theme:            (r.theme as Theme) ?? get().theme,
+      startWithWindows: r.startWithWindows ?? get().startWithWindows,
       startMinimized:   r.startMinimized ?? get().startMinimized,
       closeToTray:      r.closeToTray ?? get().closeToTray,
       autoBypass:       r.autoBypass ?? get().autoBypass,

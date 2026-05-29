@@ -18,6 +18,7 @@ function snapshot() {
   const s = useStore.getState()
   return {
     theme:            s.theme,
+    startWithWindows: s.startWithWindows,
     startMinimized:   s.startMinimized,
     closeToTray:      s.closeToTray,
     autoBypass:       s.autoBypass,

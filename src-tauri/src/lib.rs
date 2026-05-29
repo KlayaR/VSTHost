@@ -243,6 +243,29 @@ fn load_state(app: AppHandle) -> Option<serde_json::Value> {
     serde_json::from_str(&text).ok()
 }
 
+// Enable/disable launch-at-login via the HKCU Run key (no extra crates — uses reg.exe)
+#[tauri::command]
+fn set_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
+    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe.to_string_lossy().to_string();
+
+    let mut cmd = std::process::Command::new("reg");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    if enabled {
+        let value = if minimized { format!("\"{exe}\" --minimized") } else { format!("\"{exe}\"") };
+        cmd.args(["add", key, "/v", "VSTHost", "/t", "REG_SZ", "/d", &value, "/f"]);
+    } else {
+        cmd.args(["delete", key, "/v", "VSTHost", "/f"]);
+    }
+    cmd.status().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 fn save_state(app: AppHandle, state: serde_json::Value) -> Result<(), String> {
     let path = state_file(&app).ok_or("No config dir")?;
@@ -265,6 +288,7 @@ pub fn run() {
             save_preset,
             load_preset,
             delete_preset,
+            set_autostart,
             load_state,
             save_state
         ])

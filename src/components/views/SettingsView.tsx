@@ -1,12 +1,17 @@
 import React from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
 import { useStore } from '../../store/useStore'
 import { sendEngineCommand } from '../../engine/engineBridge'
+
+function setAutostart(enabled: boolean, minimized: boolean) {
+  invoke('set_autostart', { enabled, minimized }).catch(e => console.error('[autostart]', e))
+}
 
 export default function SettingsView() {
   const {
     theme, toggleTheme, engineConnected, engineScanProgress,
-    startMinimized, closeToTray, autoBypass, setSetting,
+    startWithWindows, startMinimized, closeToTray, autoBypass, setSetting,
     scanPaths, setScanPaths,
   } = useStore()
 
@@ -51,10 +56,16 @@ export default function SettingsView() {
           {/* Behavior */}
           <SettingsGroup title="Behavior">
             <ToggleRow
+              label="Start with Windows"
+              description="Launch automatically when you log in"
+              value={startWithWindows}
+              onChange={() => { const v = !startWithWindows; setSetting('startWithWindows', v); setAutostart(v, startMinimized) }}
+            />
+            <ToggleRow
               label="Start minimized to tray"
               description="Launch VSTHost in background on startup"
               value={startMinimized}
-              onChange={() => setSetting('startMinimized', !startMinimized)}
+              onChange={() => { const v = !startMinimized; setSetting('startMinimized', v); if (startWithWindows) setAutostart(true, v) }}
             />
             <ToggleRow
               label="Close to tray"

@@ -51,6 +51,12 @@ export default function App() {
       if (e.key === 'Escape') {
         setShowShortcuts(false)
       }
+      // Number keys 1-9 → quick-switch presets
+      if (/^[1-9]$/.test(e.key) && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLSelectElement)) {
+        const { presets, loadPreset } = useStore.getState()
+        const p = presets[parseInt(e.key, 10) - 1]
+        if (p) { e.preventDefault(); loadPreset(p.id) }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

@@ -41,6 +41,8 @@ export default function StatusBar() {
       <Sep />
       <StatusItem label={`${activePlugins} plugin${activePlugins !== 1 ? 's' : ''}`} />
       <StatusItem label={`${latencyMs}ms`} />
+      <Sep />
+      <CpuReadout />
       <div style={{ flex: 1 }} />
       <button
         onClick={() => setShowShortcuts(true)}
@@ -61,6 +63,14 @@ export default function StatusBar() {
 
 function Sep() {
   return <div style={{ width: 1, height: 10, background: 'var(--border)' }} />
+}
+
+// Isolated CPU readout — subscribes only to cpu (updates ~30fps)
+function CpuReadout() {
+  const cpu = useStore(s => s.cpu)
+  const pct = Math.round(cpu * 100)
+  const color = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--yellow)' : 'var(--text-muted)'
+  return <span style={{ color }}>CPU {pct}%</span>
 }
 
 function StatusItem({ label, dot, highlight }: { label: string; dot?: 'green' | 'yellow'; highlight?: boolean }) {

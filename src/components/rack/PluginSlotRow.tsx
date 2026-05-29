@@ -9,6 +9,26 @@ interface Props {
   globalBypass: boolean
 }
 
+// Isolated per-slot output meter — subscribes only to its own level so the
+// 30fps updates don't re-render the whole slot row.
+function SlotMeter({ index, active }: { index: number; active: boolean }) {
+  const level = useStore(s => s.slotLevels[index] ?? 0)
+  return (
+    <div style={{ width: 3, height: 26, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }} title="Output level">
+      <div style={{
+        position: 'relative', width: '100%', height: '100%',
+      }}>
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          height: `${Math.min(1, level) * 100}%`,
+          background: active ? (level > 0.9 ? 'var(--red)' : level > 0.7 ? 'var(--yellow)' : 'var(--green)') : 'var(--text-muted)',
+          transition: 'height 0.05s',
+        }} />
+      </div>
+    </div>
+  )
+}
+
 export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
   const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor } = useStore()
   const { plugin, enabled, bypassed, expanded } = slot
@@ -56,7 +76,7 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
           </div>
         </div>
 
-        <span className="badge badge-vst3">{plugin.format}</span>
+        <SlotMeter index={index} active={!inactive} />
 
         {/* Open Editor — the primary action */}
         <button

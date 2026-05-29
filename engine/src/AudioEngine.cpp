@@ -268,8 +268,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     midiBuffer.clear();
     pluginChain.processBlock(processBuffer, midiBuffer);
 
-    // ── Apply output gain ─────────────────────────────────────────────────────
+    // ── Apply output gain (and mute) ──────────────────────────────────────────
     processBuffer.applyGain(outputGain.load());
+    if (muted.load()) processBuffer.clear();
 
     // ── Measure output level ─────────────────────────────────────────────────
     const float outPeak = processBuffer.getMagnitude(0, numSamples);

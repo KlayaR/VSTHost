@@ -72,6 +72,10 @@ interface AppState {
   bypassAll: boolean
   inputLevel: number
   outputLevel: number
+  cpu: number
+  slotLevels: number[]
+  muted: boolean
+  toggleMute: () => void
   presetModified: boolean
 
   setInputGain:      (v: number) => void
@@ -87,7 +91,7 @@ interface AppState {
   reorderSlots:       (from: number, to: number) => void
   updateParam:        (slotId: string, paramId: string, value: number) => void
   openEditor:         (id: string) => void
-  setLevels:          (input: number, output: number) => void
+  setLevels:          (input: number, output: number, cpu: number, slots: number[]) => void
   setChainFromEngine: (raw: unknown[]) => void
   pendingSaveName:    string | null
 
@@ -162,6 +166,14 @@ export const useStore = create<AppState>((set, get) => ({
   bypassAll:   false,
   inputLevel:  0,
   outputLevel: 0,
+  cpu:         0,
+  slotLevels:  [],
+  muted:       false,
+  toggleMute: () => {
+    const next = !get().muted
+    set({ muted: next })
+    sendEngineCommand({ cmd: 'set_mute', value: next })
+  },
   presetModified: false,
 
   setInputGain:  (v) => { set({ inputGain: v, presetModified: true }); sendEngineCommand({ cmd: 'set_input_gain', value: v }) },
@@ -253,7 +265,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (idx >= 0) sendEngineCommand({ cmd: 'open_editor', index: idx })
   },
 
-  setLevels: (input, output) => set({ inputLevel: input, outputLevel: output }),
+  setLevels: (input, output, cpu, slots) => set({ inputLevel: input, outputLevel: output, cpu, slotLevels: slots }),
 
   setChainFromEngine: (raw) => {
     const slots = (raw as Record<string, unknown>[]).map(rawToSlot)

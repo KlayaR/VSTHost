@@ -47,6 +47,13 @@ public:
     void setInputGainDb (float db) { inputGain.store (juce::Decibels::decibelsToGain(db)); }
     void setOutputGainDb(float db) { outputGain.store(juce::Decibels::decibelsToGain(db)); }
 
+    // ── Mute (silences the processed output) ──────────────────────────────────
+    void setMuted(bool m) { muted.store(m); }
+    bool isMuted() const  { return muted.load(); }
+
+    // ── CPU usage 0..1 (from the audio device) ────────────────────────────────
+    double getCpuUsage() { return dm.getCpuUsage(); }
+
     // ── Accessors ─────────────────────────────────────────────────────────────
     PluginChain&   chain()   { return pluginChain;   }
     PluginScanner& scanner() { return pluginScanner; }
@@ -73,6 +80,7 @@ private:
     std::atomic<bool>  paramDirty  { false };
     std::atomic<float> inputGain   { 1.0f };
     std::atomic<float> outputGain  { 1.0f };
+    std::atomic<bool>  muted       { false };
     float inputSmooth  = 0.0f;
     float outputSmooth = 0.0f;
 

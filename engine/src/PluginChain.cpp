@@ -29,7 +29,11 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
     for (auto* slot : slots)
     {
         if (!slot || !slot->instance || !slot->enabled || slot->bypassed)
+        {
+            // Still report the passing signal level at this stage
+            if (slot) slot->level.store(slot->level.load() * 0.8f + buffer.getMagnitude(0, buffer.getNumSamples()) * 0.2f);
             continue;
+        }
 
         auto& proc = *slot->instance;
         const int plugIns  = proc.getTotalNumInputChannels();
@@ -54,6 +58,9 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
             for (int ch = 0; ch < juce::jmin(buffer.getNumChannels(), needed); ++ch)
                 buffer.copyFrom(ch, 0, scratch, ch, 0, buffer.getNumSamples());
         }
+
+        // Slot output level for the meter
+        slot->level.store(slot->level.load() * 0.8f + buffer.getMagnitude(0, buffer.getNumSamples()) * 0.2f);
     }
 }
 
@@ -112,6 +119,16 @@ const ChainSlot* PluginChain::getSlot(int index) const
 {
     juce::ScopedReadLock rl(chainLock);
     return juce::isPositiveAndBelow(index, slots.size()) ? slots[index] : nullptr;
+}
+
+std::vector<float> PluginChain::getSlotLevels() const
+{
+    juce::ScopedReadLock rl(chainLock);
+    std::vector<float> out;
+    out.reserve((size_t) slots.size());
+    for (const auto* s : slots)
+        out.push_back(s ? s->level.load() : 0.0f);
+    return out;
 }
 
 void PluginChain::setParameter(int slotIdx, int paramIdx, float value)

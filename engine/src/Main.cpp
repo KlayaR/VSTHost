@@ -29,6 +29,11 @@ public:
         auto* obj = makeEvent("levels");
         obj->setProperty("input",  engine.getInputLevel());
         obj->setProperty("output", engine.getOutputLevel());
+        obj->setProperty("cpu",    engine.getCpuUsage());
+        // Per-slot output levels for the chain meters
+        juce::Array<juce::var> sl;
+        for (float l : engine.chain().getSlotLevels()) sl.add(l);
+        obj->setProperty("slots", sl);
         ipc.sendEvent(obj);
 
         // Notify the UI once when plugin parameters change (incl. from editors)
@@ -411,6 +416,10 @@ private:
         else if (type == "set_output_gain")
         {
             engine->setOutputGainDb((float)cmd["value"]);
+        }
+        else if (type == "set_mute")
+        {
+            engine->setMuted((bool)cmd["value"]);
         }
         else if (type == "set_input_channel")
         {

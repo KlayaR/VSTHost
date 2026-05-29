@@ -139,6 +139,8 @@ function RackPanel() {
   const setShowSavePreset = useStore(s => s.setShowSavePreset)
   const reorderSlots    = useStore(s => s.reorderSlots)
   const addPluginToSlot = useStore(s => s.addPluginToSlot)
+  const muted           = useStore(s => s.muted)
+  const toggleMute      = useStore(s => s.toggleMute)
 
   const [dragIdx, setDragIdx] = useState<number | null>(null)   // reorder source
   const [insertAt, setInsertAt] = useState<number | null>(null) // plugin-add insertion point
@@ -172,6 +174,19 @@ function RackPanel() {
       <div style={{ height: 44, padding: '0 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-surface)', flexShrink: 0 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Signal Chain</span>
         <div style={{ flex: 1 }} />
+        <button
+          className="btn btn-ghost"
+          onClick={toggleMute}
+          style={{ fontSize: 11, background: muted ? 'rgba(255,85,85,0.18)' : undefined, color: muted ? 'var(--red)' : undefined, borderColor: muted ? 'var(--red)' : undefined }}
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M2 5h2.5L8 2v10L4.5 9H2V5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            {muted
+              ? <path d="M10.5 5l3 3M13.5 5l-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              : <path d="M10.5 5a3.2 3.2 0 010 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
+          </svg>
+          {muted ? 'Muted' : 'Mute'}
+        </button>
         <button className="btn btn-ghost" onClick={() => setShowSavePreset(true)} style={{ fontSize: 11 }}>
           <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none" /><path d="M3 7.5L5 9.5L9 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           Save<kbd style={{ fontSize: 9, background: 'var(--bg-active)', padding: '0 4px', borderRadius: 2 }}>Ctrl+S</kbd>

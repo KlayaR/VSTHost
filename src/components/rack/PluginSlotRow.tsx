@@ -14,17 +14,13 @@ interface Props {
 function SlotMeter({ index, active }: { index: number; active: boolean }) {
   const level = useStore(s => s.slotLevels[index] ?? 0)
   return (
-    <div style={{ width: 3, height: 26, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }} title="Output level">
+    <div style={{ width: 44, height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }} title="Output level">
       <div style={{
-        position: 'relative', width: '100%', height: '100%',
-      }}>
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          height: `${Math.min(1, level) * 100}%`,
-          background: active ? (level > 0.9 ? 'var(--red)' : level > 0.7 ? 'var(--yellow)' : 'var(--green)') : 'var(--text-muted)',
-          transition: 'height 0.05s',
-        }} />
-      </div>
+        height: '100%',
+        width: `${Math.min(1, level) * 100}%`,
+        background: active ? (level > 0.9 ? 'var(--red)' : level > 0.7 ? 'var(--yellow)' : 'var(--green)') : 'var(--text-muted)',
+        transition: 'width 0.05s',
+      }} />
     </div>
   )
 }

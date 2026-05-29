@@ -1,0 +1,18 @@
+# ── Dependencies / build output (all regenerable) ────────────────────────────
+node_modules/
+dist/
+dist-electron/
+
+# Rust / Tauri build artifacts (can be multiple GB)
+src-tauri/target/
+
+# C++/JUCE engine build (CMake cache, JUCE clone, ASIO SDK, object files)
+engine/build/
+
+# ── OS / editor cruft ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# ── Local state / scratch ─────────────────────────────────────────────────────
+*.local

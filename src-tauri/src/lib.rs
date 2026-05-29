@@ -1,0 +1,326 @@
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Mutex;
+
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, WindowEvent,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared state: the audio engine child process + its stdin handle
+// ─────────────────────────────────────────────────────────────────────────────
+struct EngineState {
+    child: Mutex<Option<Child>>,
+    stdin: Mutex<Option<ChildStdin>>,
+    // (frontend_ready, buffered_events): engine events emitted before the
+    // frontend attaches its listener are buffered here, then flushed once the
+    // frontend calls `frontend_ready`. Prevents a startup race from dropping
+    // the initial ready/devices/preset_list/chain events.
+    outbox: Mutex<(bool, Vec<serde_json::Value>)>,
+}
+
+impl Default for EngineState {
+    fn default() -> Self {
+        Self {
+            child: Mutex::new(None),
+            stdin: Mutex::new(None),
+            outbox: Mutex::new((false, Vec::new())),
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Locate the engine binary (resource dir when bundled, build dir in dev)
+// ─────────────────────────────────────────────────────────────────────────────
+fn find_engine(app: &AppHandle) -> Option<std::path::PathBuf> {
+    // 1) Bundled resource
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join("engine").join("VSTHostEngine.exe");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // 2) Dev build output, relative to the project root (cwd) or exe dir
+    let candidates = [
+        std::env::current_dir().ok().map(|d| {
+            d.join("engine/build/VSTHostEngine_artefacts/Release/VSTHostEngine.exe")
+        }),
+        std::env::current_dir().ok().map(|d| {
+            d.join("../engine/build/VSTHostEngine_artefacts/Release/VSTHostEngine.exe")
+        }),
+    ];
+    for c in candidates.into_iter().flatten() {
+        if c.exists() {
+            return Some(c);
+        }
+    }
+    None
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spawn the engine and pump its stdout → "engine-event" Tauri events
+// ─────────────────────────────────────────────────────────────────────────────
+fn spawn_engine(app: &AppHandle) {
+    let engine_path = match find_engine(app) {
+        Some(p) => p,
+        None => {
+            emit_or_buffer(app, serde_json::json!({
+                "event": "engine_offline",
+                "message": "Engine binary not found — build it with engine/build.bat"
+            }));
+            return;
+        }
+    };
+
+    let mut cmd = Command::new(&engine_path);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    // Hide the engine's console window on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            emit_or_buffer(app, serde_json::json!({
+                "event": "engine_offline",
+                "message": format!("Failed to start engine: {e}")
+            }));
+            return;
+        }
+    };
+
+    let stdout = child.stdout.take().expect("engine stdout");
+    let stdin = child.stdin.take().expect("engine stdin");
+
+    let state = app.state::<EngineState>();
+    *state.stdin.lock().unwrap() = Some(stdin);
+    *state.child.lock().unwrap() = Some(child);
+
+    // Reader thread: forward each JSON line to the frontend (buffer until ready)
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(l) if !l.trim().is_empty() => {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&l) {
+                        emit_or_buffer(&app_handle, val);
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        // stdout closed → engine exited
+        emit_or_buffer(&app_handle, serde_json::json!({
+            "event": "engine_offline",
+            "message": "Audio engine stopped"
+        }));
+    });
+}
+
+// Emit an engine event live if the frontend is ready, otherwise buffer it.
+fn emit_or_buffer(app: &AppHandle, val: serde_json::Value) {
+    let state = app.state::<EngineState>();
+    let mut guard = state.outbox.lock().unwrap();
+    if guard.0 {
+        drop(guard);
+        let _ = app.emit("engine-event", val);
+    } else {
+        guard.1.push(val);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Commands
+// ─────────────────────────────────────────────────────────────────────────────
+#[tauri::command]
+fn engine_command(state: tauri::State<EngineState>, cmd: serde_json::Value) -> Result<(), String> {
+    let mut guard = state.stdin.lock().map_err(|e| e.to_string())?;
+    if let Some(stdin) = guard.as_mut() {
+        let line = serde_json::to_string(&cmd).map_err(|e| e.to_string())?;
+        stdin.write_all(line.as_bytes())
+            .and_then(|_| stdin.write_all(b"\n"))
+            .and_then(|_| stdin.flush())
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Engine not running".into())
+    }
+}
+
+#[tauri::command]
+fn engine_running(state: tauri::State<EngineState>) -> bool {
+    state.stdin.lock().map(|g| g.is_some()).unwrap_or(false)
+}
+
+// The frontend polls this to drain buffered engine events as plain return
+// values (no event-channel race). Once it has received the startup burst it
+// calls with go_live=true, after which events stream live via the listener.
+#[tauri::command]
+fn poll_events(state: tauri::State<EngineState>, go_live: bool) -> Vec<serde_json::Value> {
+    let mut guard = state.outbox.lock().unwrap();
+    if go_live { guard.0 = true; }
+    guard.1.drain(..).collect()
+}
+
+// ── Preset storage (Rust-managed, in the Tauri config dir which is reliably
+// accessible to the app process — unlike the engine's own AppData lookup) ────
+fn presets_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let dir = app.path().app_config_dir().ok()?.join("presets");
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir)
+}
+
+fn sanitize(name: &str) -> String {
+    name.chars().map(|c| if "/\\:*?\"<>|".contains(c) { '_' } else { c }).collect()
+}
+
+#[tauri::command]
+fn list_presets(app: AppHandle) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    if let Some(dir) = presets_dir(&app) {
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+                if let Ok(text) = std::fs::read_to_string(&p) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let name = v.get("name").and_then(|x| x.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| p.file_stem().unwrap().to_string_lossy().to_string());
+                        out.push(serde_json::json!({ "name": name }));
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")));
+    out
+}
+
+#[tauri::command]
+fn save_preset(app: AppHandle, name: String, data: serde_json::Value) -> Result<(), String> {
+    let dir = presets_dir(&app).ok_or("no presets dir")?;
+    let path = dir.join(format!("{}.json", sanitize(&name)));
+    std::fs::write(path, serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_preset(app: AppHandle, name: String) -> Option<serde_json::Value> {
+    let dir = presets_dir(&app)?;
+    let text = std::fs::read_to_string(dir.join(format!("{}.json", sanitize(&name)))).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+#[tauri::command]
+fn delete_preset(app: AppHandle, name: String) {
+    if let Some(dir) = presets_dir(&app) {
+        let _ = std::fs::remove_file(dir.join(format!("{}.json", sanitize(&name))));
+    }
+}
+
+fn state_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let dir = app.path().app_config_dir().ok()?;
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir.join("state.json"))
+}
+
+#[tauri::command]
+fn load_state(app: AppHandle) -> Option<serde_json::Value> {
+    let path = state_file(&app)?;
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+#[tauri::command]
+fn save_state(app: AppHandle, state: serde_json::Value) -> Result<(), String> {
+    let path = state_file(&app).ok_or("No config dir")?;
+    let text = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App entry
+// ─────────────────────────────────────────────────────────────────────────────
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(EngineState::default())
+        .invoke_handler(tauri::generate_handler![
+            engine_command,
+            engine_running,
+            poll_events,
+            list_presets,
+            save_preset,
+            load_preset,
+            delete_preset,
+            load_state,
+            save_state
+        ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+
+            // ── System tray ──────────────────────────────────────────────────
+            let show = MenuItem::with_id(app, "show", "Show VSTHost", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("VSTHost")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::DoubleClick { .. } = event {
+                        if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // ── Show window unless launched with --minimized ─────────────────
+            let minimized = std::env::args().any(|a| a == "--minimized");
+            if !minimized {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
+            }
+
+            // ── Launch the audio engine ──────────────────────────────────────
+            spawn_engine(&handle);
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Close to tray instead of quitting
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running VSTHost");
+}

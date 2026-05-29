@@ -10,6 +10,7 @@ import SavePresetModal from './components/modals/SavePresetModal'
 import ShortcutsModal from './components/modals/ShortcutsModal'
 import StatusBar from './components/StatusBar'
 import TooltipLayer from './components/TooltipLayer'
+import LoadingScreen from './components/LoadingScreen'
 
 export default function App() {
   // Granular selectors — never subscribe to the whole store, or the entire
@@ -77,6 +78,7 @@ export default function App() {
       {showShortcuts && <ShortcutsModal />}
       <ErrorToast />
       <TooltipLayer />
+      <LoadingScreen />
     </div>
   )
 }

@@ -329,10 +329,20 @@ private:
             engine->clearParamDirty();
             engine->setLoadingChain(false);   // re-enable change notifications
             sendChain();
+            ipc->sendEvent(makeEvent("load_done"));  // UI: dismiss loading screen
             return;
         }
 
         const juce::var slot = slots[index];
+
+        // Tell the UI which plugin we're loading, for the startup progress bar.
+        {
+            auto* e = makeEvent("load_progress");
+            e->setProperty("index", index + 1);
+            e->setProperty("total", slots.size());
+            e->setProperty("name",  slot["file"].toString());
+            ipc->sendEvent(e);
+        }
         juce::PluginDescription desc;
         if (!engine->scanner().describePlugin(slot["file"].toString(), slot["identifier"].toString(), desc))
         {
@@ -597,6 +607,10 @@ private:
         else if (type == "get_chain")
         {
             sendChain();
+        }
+        else if (type == "startup_done")
+        {
+            engine->clearStartupMute();   // UI dismissed the loading screen
         }
         else if (type == "ping")
         {

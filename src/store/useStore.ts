@@ -132,6 +132,14 @@ interface AppState {
   setRealChannels: (inputs: string[], outputs: string[]) => void
   setRealVirtualOutputs: (v: string[]) => void
 
+  // Startup loading screen
+  appLoading: boolean
+  loadingPhase: string
+  loadingDetail: string
+  loadingProgress: number   // -1 = indeterminate, else 0..1
+  setLoadingState: (s: Partial<AppState>) => void
+  finishLoading: () => void
+
   // Persistence
   hydrate: (data: Record<string, unknown>) => void
   pendingRestore: boolean
@@ -386,16 +394,29 @@ export const useStore = create<AppState>((set, get) => ({
       set({ presets })
       const { pendingRestore, activePresetId } = get()
       if (pendingRestore && activePresetId && presets.some(p => p.id === activePresetId)) {
-        set({ pendingRestore: false })
+        set({ pendingRestore: false, loadingPhase: 'Loading plugins…' })
         get().loadPreset(activePresetId)
-      } else if (pendingRestore) {
-        set({ pendingRestore: false })
+        // load_done (from the engine) dismisses the loading screen.
+      } else {
+        if (pendingRestore) set({ pendingRestore: false })
+        get().finishLoading()   // nothing to restore → ready to use
       }
     })
   },
 
   setEnginePresets: () => { /* presets now come from Rust via refreshPresets() */ },
   pendingRestore: false,
+
+  // ── Startup loading screen ───────────────────────────────────────────────────
+  appLoading:      true,
+  loadingPhase:    'Starting…',
+  loadingDetail:   '',
+  loadingProgress: -1,
+  setLoadingState: (s) => set(s),
+  finishLoading:   () => {
+    set({ appLoading: false, loadingProgress: 1 })
+    sendEngineCommand({ cmd: 'startup_done' })   // unmute now that we're ready
+  },
 
   availablePlugins: [],
   toggleFavorite: (id) => {

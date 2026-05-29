@@ -48,6 +48,7 @@ function handleEngineEvent(event: unknown) {
         break
       }
       engineHasStarted = true
+      store.setLoadingState({ loadingPhase: 'Audio engine ready', loadingProgress: -1 })
       store.setRoutingFromEngine({
         sampleRate:     e['sampleRate'] as number | undefined,
         bufferSize:     e['bufferSize'] as number | undefined,
@@ -65,6 +66,7 @@ function handleEngineEvent(event: unknown) {
 
     case 'engine_offline': {
       store.setEngineConnected(false)
+      if (store.appLoading) store.finishLoading()  // don't trap the user behind the splash
       break
     }
 
@@ -104,6 +106,27 @@ function handleEngineEvent(event: unknown) {
     case 'chain': {
       store.setChainFromEngine((e['plugins'] as unknown[]) ?? [])
       store.setBypassAllState((e['bypassAll'] as boolean) ?? false)
+      break
+    }
+
+    case 'load_progress': {
+      const idx   = (e['index'] as number) ?? 0
+      const total = (e['total'] as number) ?? 1
+      // Prefer the friendly plugin name from the optimistic slots we rendered.
+      const slot  = store.slots[idx - 1]
+      const name  = slot?.plugin?.name && slot.plugin.name !== 'Loading…'
+        ? slot.plugin.name
+        : String(e['name'] ?? '').split(/[\\/]/).pop() ?? ''
+      store.setLoadingState({
+        loadingPhase:    'Loading plugins…',
+        loadingDetail:   `${idx} / ${total}  ·  ${name}`,
+        loadingProgress: total > 0 ? idx / total : -1,
+      })
+      break
+    }
+
+    case 'load_done': {
+      store.finishLoading()
       break
     }
 
@@ -154,7 +177,15 @@ function handleEngineEvent(event: unknown) {
 let unlisten: UnlistenFn | null = null
 
 export async function initEngineBridge() {
-  if (!inTauri()) return // browser preview → offline mode
+  if (!inTauri()) {
+    // Browser preview → no engine, don't sit behind the splash forever.
+    useStore.getState().finishLoading()
+    return
+  }
+
+  useStore.getState().setLoadingState({ appLoading: true, loadingPhase: 'Starting audio engine…', loadingProgress: -1 })
+  // Watchdog: never trap the user behind the loading screen if something stalls.
+  setTimeout(() => { if (useStore.getState().appLoading) useStore.getState().finishLoading() }, 60000)
 
   unlisten = await listen('engine-event', (evt) => handleEngineEvent(evt.payload))
 

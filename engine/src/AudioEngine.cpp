@@ -379,8 +379,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     outputSmooth = outputSmooth * 0.92f + outPeak * 0.08f;
     outputLevel.store(outputSmooth);
 
-    const bool master  = muted.load();          // kills everything
-    const bool monMute = monitorMuted.load();   // kills only the monitor
+    // While a chain is being (re)built, silence everything: the signal path is
+    // in flux and an open mic→speaker passthrough could feed back (larsen).
+    const bool master  = muted.load() || loadingChain.load() || startupMuted.load();  // kills everything
+    const bool monMute = monitorMuted.load();                  // kills only the monitor
 
     // ── Virtual send (to apps): silenced only by master mute ──────────────────
     if (sendActive.load())

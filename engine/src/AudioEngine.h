@@ -49,6 +49,10 @@ public:
     void setLoadingChain(bool v) { loadingChain.store(v); }
     bool isLoadingChain() const  { return loadingChain.load(); }
 
+    // Muted from launch until the UI's loading screen is dismissed, so the
+    // empty-chain mic→output passthrough can't feed back during startup.
+    void clearStartupMute() { startupMuted.store(false); }
+
     // ── Input / output gain (dB) ──────────────────────────────────────────────
     void setInputGainDb (float db) { inputGain.store (juce::Decibels::decibelsToGain(db)); }
     void setOutputGainDb(float db) { outputGain.store(juce::Decibels::decibelsToGain(db)); }
@@ -97,6 +101,7 @@ private:
     std::atomic<float> outputLevel { 0.0f };
     std::atomic<bool>  paramDirty   { false };
     std::atomic<bool>  loadingChain { false };
+    std::atomic<bool>  startupMuted { true };
     std::atomic<float> inputGain   { 1.0f };
     std::atomic<float> outputGain  { 1.0f };
     std::atomic<bool>  muted       { false };

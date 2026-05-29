@@ -51,6 +51,13 @@ public:
     // scanned, so that if the process crashes we know which one to blacklist).
     static juce::File deadMansPedalFile();
 
+    // Persist / restore the scanned plugin list so that loading a preset at
+    // startup doesn't have to re-enumerate every plugin file from disk (which
+    // is catastrophically slow for shell plugins like Waves WaveShell).
+    void saveKnownPlugins() const;
+    void loadKnownPlugins();
+    static juce::File knownPluginsFile();
+
 private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList          knownPlugins;

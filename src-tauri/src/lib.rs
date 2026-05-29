@@ -26,6 +26,8 @@ struct EngineState {
     // Count of consecutive *quick* crashes (engine died < 3s after launch).
     // Used to stop a runaway crash loop instead of respawning forever.
     crash_streak: AtomicU32,
+    // When true, closing the window hides to tray; when false, it quits.
+    close_to_tray: AtomicBool,
 }
 
 impl Default for EngineState {
@@ -36,6 +38,7 @@ impl Default for EngineState {
             outbox: Mutex::new((false, Vec::new())),
             shutting_down: AtomicBool::new(false),
             crash_streak: AtomicU32::new(0),
+            close_to_tray: AtomicBool::new(true),
         }
     }
 }
@@ -199,6 +202,13 @@ fn engine_command(state: tauri::State<EngineState>, cmd: serde_json::Value) -> R
     }
 }
 
+// The frontend mirrors its "Close to tray" setting here so the native window
+// close handler can decide whether to hide to tray or actually quit.
+#[tauri::command]
+fn set_close_to_tray(state: tauri::State<EngineState>, enabled: bool) {
+    state.close_to_tray.store(enabled, Ordering::SeqCst);
+}
+
 #[tauri::command]
 fn engine_running(state: tauri::State<EngineState>) -> bool {
     state.stdin.lock().map(|g| g.is_some()).unwrap_or(false)
@@ -324,6 +334,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             engine_command,
             engine_running,
+            set_close_to_tray,
             poll_events,
             list_presets,
             save_preset,
@@ -387,10 +398,20 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Close to tray instead of quitting
+            // Close to tray instead of quitting — but only if the user's
+            // "Close to tray" setting is on. Otherwise actually quit.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                let state = window.app_handle().state::<EngineState>();
+                if state.close_to_tray.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    state.shutting_down.store(true, Ordering::SeqCst);
+                    if let Some(mut c) = state.child.lock().unwrap().take() {
+                        let _ = c.kill();
+                    }
+                    // Don't prevent close → the window closes and the app exits.
+                }
             }
         })
         .run(tauri::generate_context!())

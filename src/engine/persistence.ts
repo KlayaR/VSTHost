@@ -36,6 +36,12 @@ let savedRouting: Record<string, unknown> | null = null
 
 let timer: ReturnType<typeof setTimeout> | null = null
 
+/** Tell the Rust window-close handler whether to hide-to-tray or quit. */
+export function syncCloseToTray(enabled: boolean) {
+  if (!inTauri()) return
+  invoke('set_close_to_tray', { enabled }).catch(() => {})
+}
+
 /** Debounced save — call after any persistable change. */
 export function schedulePersist() {
   if (!inTauri()) return
@@ -53,6 +59,7 @@ export async function loadPersisted() {
     if (data) {
       savedRouting = (data['routing'] as Record<string, unknown>) ?? null
       useStore.getState().hydrate(data)
+      syncCloseToTray(useStore.getState().closeToTray)
     }
   } catch { /* first run — nothing saved yet */ }
 }

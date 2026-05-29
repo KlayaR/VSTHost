@@ -3,6 +3,28 @@
 PluginScanner::PluginScanner()
 {
     formatManager.addDefaultFormats(); // VST3 always; VST2 if JUCE_PLUGINHOST_VST=1
+    loadKnownPlugins();                // restore cached scan results (fast startup)
+}
+
+juce::File PluginScanner::knownPluginsFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("VSTHost/knownplugins.xml");
+}
+
+void PluginScanner::saveKnownPlugins() const
+{
+    if (auto xml = knownPlugins.createXml())
+    {
+        knownPluginsFile().getParentDirectory().createDirectory();
+        xml->writeTo(knownPluginsFile());
+    }
+}
+
+void PluginScanner::loadKnownPlugins()
+{
+    if (auto xml = juce::XmlDocument::parse(knownPluginsFile()))
+        knownPlugins.recreateFromXml(*xml);
 }
 
 void PluginScanner::scan(const juce::StringArray& paths,
@@ -177,6 +199,10 @@ void PluginScanner::ScanThread::run()
             }
         }
     }
+
+    // Persist the freshly-scanned list so the next launch can load a preset
+    // without re-enumerating plugin files (especially slow Waves shells).
+    owner.saveKnownPlugins();
 
     // Notify done on message thread
     juce::var result = owner.knownPluginsToVar();

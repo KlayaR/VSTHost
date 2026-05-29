@@ -1,6 +1,6 @@
 [package]
 name = "vsthost"
-version = "1.0.0"
+version = "1.0.1"
 description = "Lightweight VST3 microphone processing host"
 authors = ["VSTHost"]
 edition = "2021"

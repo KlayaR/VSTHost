@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { NavSection, Preset, PluginSlot, RoutingSettings, Theme, Plugin } from '../types'
 import { DEFAULT_ROUTING } from '../data/mockData'
 import { sendEngineCommand } from '../engine/engineBridge'
-import { schedulePersist } from '../engine/persistence'
+import { schedulePersist, syncCloseToTray } from '../engine/persistence'
 import { listPresetData, savePresetData, loadPresetData, deletePresetData, serializeChain } from '../engine/presets'
 
 // ── Helper: map raw engine chain slot → UI PluginSlot ─────────────────────────
@@ -157,7 +157,11 @@ export const useStore = create<AppState>((set, get) => ({
   closeToTray:    true,
   autoBypass:     false,
   scanPaths:      ['C:\\Program Files\\Common Files\\VST3'],
-  setSetting: (key, v) => { set({ [key]: v } as Partial<AppState>); schedulePersist() },
+  setSetting: (key, v) => {
+    set({ [key]: v } as Partial<AppState>)
+    if (key === 'closeToTray') syncCloseToTray(v)
+    schedulePersist()
+  },
   setScanPaths: (paths) => { set({ scanPaths: paths }); schedulePersist() },
 
   engineConnected:    false,

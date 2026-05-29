@@ -31,6 +31,7 @@ export interface PluginSlot {
   expanded: boolean
   editorOpen?: boolean
   state?: string          // base64 plugin state blob (full fidelity)
+  loading?: boolean       // optimistic placeholder until the engine confirms
 }
 
 export interface Preset {

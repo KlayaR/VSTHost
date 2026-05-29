@@ -314,7 +314,31 @@ export const useStore = create<AppState>((set, get) => ({
     set({ activePresetId: id, presetModified: false })
     loadPresetData(preset.name).then(data => {
       if (!data) return
-      sendEngineCommand({ cmd: 'load_chain', chain: (data['chain'] as unknown[]) ?? [] })
+      const chain = (data['chain'] as Record<string, unknown>[]) ?? []
+      // Optimistically show the chain right away (looked up from the scanned
+      // catalog) so the rack isn't blank while the engine instantiates plugins,
+      // which can take several seconds for heavy plugins. The engine's authoritative
+      // `chain` event replaces these once loading finishes.
+      const catalog = get().availablePlugins
+      const optimistic: PluginSlot[] = chain.map((c, i) => {
+        const uid  = String(c['identifier'] ?? '')
+        const file = String(c['file'] ?? '')
+        const p = catalog.find(x => x.uid === uid) ?? catalog.find(x => x.file === file)
+        return {
+          id:       uid || file || `slot-${i}`,
+          enabled:  c['enabled'] !== false,
+          bypassed: c['bypassed'] === true,
+          expanded: false,
+          state:    c['state'] ? String(c['state']) : undefined,
+          loading:  true,
+          plugin: p ?? {
+            id: uid || file, file, uid, name: 'Loading…', manufacturer: '',
+            format: 'VST3', category: '', latency: 0, favorite: false, parameters: [],
+          },
+        }
+      })
+      set({ slots: optimistic })
+      sendEngineCommand({ cmd: 'load_chain', chain })
       get().setInputGain((data['inputGain'] as number) ?? 0)
       get().setOutputGain((data['outputGain'] as number) ?? 0)
       set({ presetModified: false })

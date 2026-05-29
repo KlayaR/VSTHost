@@ -71,17 +71,23 @@ export async function loadPersisted() {
  */
 export function restoreEngineState() {
   if (!savedRouting) return
-  const { setRouting } = useStore.getState()
+  const { setRouting, routing } = useStore.getState()
   const r = savedRouting
-  // Order matters: backend & device must be applied before channels, because
-  // selecting a device resets the channel selection to default.
-  if (r['backend'])        setRouting({ backend: String(r['backend']) })
-  if (r['inputDeviceId'])  setRouting({ inputDeviceId: String(r['inputDeviceId']) })
-  if (r['outputDeviceId']) setRouting({ outputDeviceId: String(r['outputDeviceId']) })
-  if (typeof r['inputChannel'] === 'number' && r['inputChannel'] >= 0)
+  // The engine already reported its current backend/device in the "ready"
+  // event (mirrored into `routing`). Only re-apply settings that actually
+  // DIFFER — each setAudioDeviceSetup is a full device restart on ASIO (seconds),
+  // so skipping redundant ones is the difference between an instant and a
+  // multi-second startup.
+  // Order matters: backend & device before channels (selecting a device resets
+  // the channel selection).
+  if (r['backend']        && r['backend']        !== routing.backend)        setRouting({ backend: String(r['backend']) })
+  if (r['inputDeviceId']  && r['inputDeviceId']  !== routing.inputDeviceId)  setRouting({ inputDeviceId: String(r['inputDeviceId']) })
+  if (r['outputDeviceId'] && r['outputDeviceId'] !== routing.outputDeviceId) setRouting({ outputDeviceId: String(r['outputDeviceId']) })
+  if (typeof r['inputChannel'] === 'number' && r['inputChannel'] >= 0 && r['inputChannel'] !== routing.inputChannel)
     setRouting({ inputChannel: r['inputChannel'] as number })
-  if (typeof r['outputChannel'] === 'number' && r['outputChannel'] >= 0)
+  if (typeof r['outputChannel'] === 'number' && r['outputChannel'] >= 0 && r['outputChannel'] !== routing.outputChannel)
     setRouting({ outputChannel: r['outputChannel'] as number })
-  if (r['virtualOutputId']) setRouting({ virtualOutputId: String(r['virtualOutputId']) })
+  if (r['virtualOutputId'] && r['virtualOutputId'] !== routing.virtualOutputId)
+    setRouting({ virtualOutputId: String(r['virtualOutputId']) })
   savedRouting = null  // only restore once
 }

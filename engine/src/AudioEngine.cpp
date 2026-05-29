@@ -256,7 +256,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         processBuffer.copyFrom(1, 0, inputChannelData[1], numSamples);
     }
 
-    // ── Measure input level ──────────────────────────────────────────────────
+    // ── Apply input gain ──────────────────────────────────────────────────────
+    processBuffer.applyGain(inputGain.load());
+
+    // ── Measure input level (post-gain) ───────────────────────────────────────
     const float inPeak = processBuffer.getMagnitude(0, numSamples);
     inputSmooth = inputSmooth * 0.92f + inPeak * 0.08f;
     inputLevel.store(inputSmooth);
@@ -264,6 +267,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     // ── Run VST chain ────────────────────────────────────────────────────────
     midiBuffer.clear();
     pluginChain.processBlock(processBuffer, midiBuffer);
+
+    // ── Apply output gain ─────────────────────────────────────────────────────
+    processBuffer.applyGain(outputGain.load());
 
     // ── Measure output level ─────────────────────────────────────────────────
     const float outPeak = processBuffer.getMagnitude(0, numSamples);

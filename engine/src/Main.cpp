@@ -316,7 +316,7 @@ private:
 
         const juce::var slot = slots[index];
         juce::PluginDescription desc;
-        if (!engine->scanner().describeFile(slot["file"].toString(), desc))
+        if (!engine->scanner().describePlugin(slot["file"].toString(), slot["identifier"].toString(), desc))
         {
             sendError("Could not describe: " + slot["file"].toString());
             loadChainAsync(slots, index + 1);
@@ -404,6 +404,14 @@ private:
             if (err.isEmpty()) sendDeviceList();
             else sendError(err);
         }
+        else if (type == "set_input_gain")
+        {
+            engine->setInputGainDb((float)cmd["value"]);
+        }
+        else if (type == "set_output_gain")
+        {
+            engine->setOutputGainDb((float)cmd["value"]);
+        }
         else if (type == "set_input_channel")
         {
             auto err = engine->setInputChannel((int)cmd["index"]);
@@ -446,9 +454,10 @@ private:
         else if (type == "add_plugin")
         {
             const juce::String file = cmd["file"].toString();
+            const juce::String uid  = cmd["uid"].toString();
 
             juce::PluginDescription desc;
-            if (!engine->scanner().describeFile(file, desc))
+            if (!engine->scanner().describePlugin(file, uid, desc))
             {
                 sendError("Plugin not found or unreadable:\n" + file);
                 return;

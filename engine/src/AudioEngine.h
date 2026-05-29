@@ -43,6 +43,10 @@ public:
     bool consumeParamDirty() { return paramDirty.exchange(false); }
     void clearParamDirty()   { paramDirty.store(false); }
 
+    // ── Input / output gain (dB) ──────────────────────────────────────────────
+    void setInputGainDb (float db) { inputGain.store (juce::Decibels::decibelsToGain(db)); }
+    void setOutputGainDb(float db) { outputGain.store(juce::Decibels::decibelsToGain(db)); }
+
     // ── Accessors ─────────────────────────────────────────────────────────────
     PluginChain&   chain()   { return pluginChain;   }
     PluginScanner& scanner() { return pluginScanner; }
@@ -67,6 +71,8 @@ private:
     std::atomic<float> inputLevel  { 0.0f };
     std::atomic<float> outputLevel { 0.0f };
     std::atomic<bool>  paramDirty  { false };
+    std::atomic<float> inputGain   { 1.0f };
+    std::atomic<float> outputGain  { 1.0f };
     float inputSmooth  = 0.0f;
     float outputSmooth = 0.0f;
 

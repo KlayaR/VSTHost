@@ -24,7 +24,9 @@ function rawToSlot(raw: Record<string, unknown>): PluginSlot {
     expanded:  false,
     state:     raw['state'] ? String(raw['state']) : undefined,
     plugin: {
-      id:           String(raw['file'] ?? raw['uid']),
+      id:           String(raw['identifier'] ?? raw['file']),
+      file:         String(raw['file'] ?? ''),
+      uid:          String(raw['identifier'] ?? ''),
       name:         String(raw['name']),
       manufacturer: String(raw['manufacturer'] ?? ''),
       format:       'VST3',
@@ -162,8 +164,8 @@ export const useStore = create<AppState>((set, get) => ({
   outputLevel: 0,
   presetModified: false,
 
-  setInputGain:  (v) => { set({ inputGain: v, presetModified: true }) },
-  setOutputGain: (v) => { set({ outputGain: v, presetModified: true }) },
+  setInputGain:  (v) => { set({ inputGain: v, presetModified: true }); sendEngineCommand({ cmd: 'set_input_gain', value: v }) },
+  setOutputGain: (v) => { set({ outputGain: v, presetModified: true }); sendEngineCommand({ cmd: 'set_output_gain', value: v }) },
 
   toggleBypassAll: () => {
     const next = !get().bypassAll
@@ -199,8 +201,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addPluginToSlot: (plugin, index) => {
-    // Real scanned plugins carry their file path as id.
-    const cmd: Record<string, unknown> = { cmd: 'add_plugin', file: plugin.id, format: plugin.format }
+    // Identify by file + unique id (shells like Waves pack many in one file).
+    // Fall back to id-as-file for plugins persisted before uid existed.
+    const cmd: Record<string, unknown> = {
+      cmd: 'add_plugin',
+      file: plugin.file || plugin.id,
+      uid:  plugin.uid || '',
+    }
     if (index !== undefined && index >= 0) cmd.index = index
     sendEngineCommand(cmd)
     set({ showAddPlugin: false, presetModified: true })
@@ -348,20 +355,21 @@ export const useStore = create<AppState>((set, get) => ({
     const plugins: Plugin[] = (raw as Record<string, unknown>[])
       .filter(r => !r['isInstrument'])           // mic processing → effects only
       .map(r => ({
-        id:           String(r['file']),
+        id:           String(r['uid'] ?? r['file']),   // unique even inside shells
+        file:         String(r['file']),
+        uid:          String(r['uid'] ?? ''),
         name:         String(r['name']),
         manufacturer: String(r['manufacturer'] ?? ''),
         format:       'VST3' as const,
         category:     String(r['category'] ?? ''),
         latency:      0,
-        favorite:     favs.has(String(r['file'])),
+        favorite:     favs.has(String(r['uid'] ?? r['file'])),
         parameters:   [],
       }))
-      // Drop exact duplicates (same file + same plugin name)
+      // Drop exact duplicates by unique id
       .filter(p => {
-        const k = p.id + '|' + p.name
-        if (seen.has(k)) return false
-        seen.add(k)
+        if (seen.has(p.id)) return false
+        seen.add(p.id)
         return true
       })
       .sort((a, b) => a.name.localeCompare(b.name))

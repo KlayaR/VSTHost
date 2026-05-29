@@ -15,6 +15,7 @@ function inTauri(): boolean {
 
 export interface PresetChainSlot {
   file: string
+  identifier: string
   enabled: boolean
   bypassed: boolean
   state?: string
@@ -24,10 +25,11 @@ export interface PresetChainSlot {
 /** Serialize the current UI chain into the saved-preset format. */
 export function serializeChain(slots: PluginSlot[]): PresetChainSlot[] {
   return slots.map(s => ({
-    file:     s.plugin.id,
-    enabled:  s.enabled,
-    bypassed: s.bypassed,
-    state:    s.state,      // full plugin state (preferred on load)
+    file:       s.plugin.file,
+    identifier: s.plugin.uid,   // disambiguates shell plugins on reload
+    enabled:    s.enabled,
+    bypassed:   s.bypassed,
+    state:      s.state,        // full plugin state (preferred on load)
     parameters: s.plugin.parameters.map(p => ({
       index: parseInt(p.id, 10),
       value: p.value,

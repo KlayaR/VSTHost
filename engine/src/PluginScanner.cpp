@@ -66,6 +66,41 @@ bool PluginScanner::describeFile(const juce::String& fileOrId, juce::PluginDescr
     return false;
 }
 
+bool PluginScanner::describePlugin(const juce::String& fileOrId, const juce::String& uid,
+                                   juce::PluginDescription& out)
+{
+    if (uid.isEmpty())
+        return describeFile(fileOrId, out);
+
+    // 1) Already-scanned types matching the unique id
+    for (const auto& desc : knownPlugins.getTypes())
+        if (desc.createIdentifierString() == uid)
+        {
+            out = desc;
+            return true;
+        }
+
+    // 2) Scan the file directly and pick the sub-plugin with the matching id
+    for (int i = 0; i < formatManager.getNumFormats(); ++i)
+    {
+        auto* format = formatManager.getFormat(i);
+        if (format->fileMightContainThisPluginType(fileOrId))
+        {
+            juce::OwnedArray<juce::PluginDescription> found;
+            knownPlugins.scanAndAddFile(fileOrId, true, found, *format);
+            for (auto* d : found)
+                if (d->createIdentifierString() == uid)
+                {
+                    out = *d;
+                    return true;
+                }
+        }
+    }
+
+    // 3) Fall back to first-in-file
+    return describeFile(fileOrId, out);
+}
+
 juce::var PluginScanner::knownPluginsToVar() const
 {
     juce::Array<juce::var> arr;
@@ -77,6 +112,7 @@ juce::var PluginScanner::knownPluginsToVar() const
         obj->setProperty("format",       desc.pluginFormatName);
         obj->setProperty("category",     desc.category);
         obj->setProperty("file",         desc.fileOrIdentifier);
+        obj->setProperty("uid",          desc.createIdentifierString());
         obj->setProperty("numInputs",    desc.numInputChannels);
         obj->setProperty("numOutputs",   desc.numOutputChannels);
         obj->setProperty("isInstrument", desc.isInstrument);

@@ -11,7 +11,9 @@ export interface PluginParameter {
 }
 
 export interface Plugin {
-  id: string
+  id: string               // unique per plugin (VST3 identifier) — even inside shells
+  file: string             // .vst3 file path
+  uid: string              // VST3 unique identifier string (disambiguates shells)
   name: string
   manufacturer: string
   format: PluginFormat

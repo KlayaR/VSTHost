@@ -32,6 +32,12 @@ public:
     bool describeFile(const juce::String& fileOrIdentifier,
                       juce::PluginDescription& outDesc);
 
+    // Like describeFile but disambiguates by unique id — required for shell
+    // plugins (e.g. Waves WaveShell) that pack many plugins in one file.
+    bool describePlugin(const juce::String& fileOrIdentifier,
+                        const juce::String& uid,
+                        juce::PluginDescription& outDesc);
+
     // Serialise the known plugin list as a juce::var array
     juce::var knownPluginsToVar() const;
 

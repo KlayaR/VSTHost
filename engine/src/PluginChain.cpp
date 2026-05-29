@@ -154,6 +154,7 @@ juce::var PluginChain::toVar() const
         obj->setProperty("bypassed",     slot->bypassed);
         obj->setProperty("latency",      slot->instance->getLatencySamples());
         obj->setProperty("file",         slot->description.fileOrIdentifier);
+        obj->setProperty("identifier",   slot->description.createIdentifierString());
 
         // Full plugin state (captures everything, e.g. FabFilter curves) as base64
         juce::MemoryBlock stateBlock;

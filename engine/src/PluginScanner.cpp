@@ -121,14 +121,30 @@ juce::var PluginScanner::knownPluginsToVar() const
     return juce::var(arr);
 }
 
+juce::File PluginScanner::deadMansPedalFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("VSTHost/deadmanspedal.txt");
+}
+
+void PluginScanner::clearBlacklist()
+{
+    knownPlugins.clearBlacklistedFiles();
+    deadMansPedalFile().deleteFile();
+}
+
 // ─── ScanThread ───────────────────────────────────────────────────────────────
 void PluginScanner::ScanThread::run()
 {
     owner.knownPlugins.clear();
 
-    juce::File deadMansPedal(juce::File::getSpecialLocation(
-        juce::File::userApplicationDataDirectory)
-        .getChildFile("VSTHost/deadmanspedal.txt"));
+    juce::File deadMansPedal(PluginScanner::deadMansPedalFile());
+
+    // If a previous scan died while probing a plugin, its path is still in the
+    // dead-man's pedal. Promote those to the blacklist so this scan SKIPS them
+    // instead of crashing on the same plugin again.
+    juce::PluginDirectoryScanner::applyBlacklistingsFromDeadMansPedal(
+        owner.knownPlugins, deadMansPedal);
 
     for (int fi = 0; fi < owner.formatManager.getNumFormats(); ++fi)
     {

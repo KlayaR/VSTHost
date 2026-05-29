@@ -75,5 +75,6 @@ export function restoreEngineState() {
     setRouting({ inputChannel: r['inputChannel'] as number })
   if (typeof r['outputChannel'] === 'number' && r['outputChannel'] >= 0)
     setRouting({ outputChannel: r['outputChannel'] as number })
+  if (r['virtualOutputId']) setRouting({ virtualOutputId: String(r['virtualOutputId']) })
   savedRouting = null  // only restore once
 }

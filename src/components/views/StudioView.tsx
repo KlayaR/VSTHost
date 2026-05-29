@@ -39,6 +39,7 @@ function RoutingPanel() {
   const realBackends       = useStore(s => s.realBackends)
   const realInputChannels  = useStore(s => s.realInputChannels)
   const realOutputChannels = useStore(s => s.realOutputChannels)
+  const realVirtualOutputs = useStore(s => s.realVirtualOutputs)
   const isAsio = routing.backend === 'ASIO'
   const latencyMs = ((routing.bufferSize / routing.sampleRate) * 1000).toFixed(2)
 
@@ -92,6 +93,15 @@ function RoutingPanel() {
           </>
         )}
 
+        <Field label="Virtual Output (to apps)" hint="Send to Discord / Zoom / OBS via a virtual cable">
+          <Select
+            value={routing.virtualOutputId || '(off)'}
+            options={['(off)', ...realVirtualOutputs]}
+            onChange={v => setRouting({ virtualOutputId: v === '(off)' ? '' : v })}
+            placeholder="(off)"
+          />
+        </Field>
+
         <div className="divider" />
 
         <Field label="Sample Rate">
@@ -107,6 +117,11 @@ function RoutingPanel() {
       </div>
     </div>
   )
+}
+
+/** Thin vertical separator for grouping toolbar buttons by concern. */
+function ToolbarDivider() {
+  return <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 3px', flexShrink: 0 }} />
 }
 
 function ChannelSelect({ channels, value, onChange, stereo }: { channels: string[]; value: number; onChange: (v: number) => void; stereo: boolean }) {
@@ -141,6 +156,8 @@ function RackPanel() {
   const addPluginToSlot = useStore(s => s.addPluginToSlot)
   const muted           = useStore(s => s.muted)
   const toggleMute      = useStore(s => s.toggleMute)
+  const monitorMuted    = useStore(s => s.monitorMuted)
+  const toggleMonitor   = useStore(s => s.toggleMonitor)
 
   const [dragIdx, setDragIdx] = useState<number | null>(null)   // reorder source
   const [insertAt, setInsertAt] = useState<number | null>(null) // plugin-add insertion point
@@ -174,9 +191,36 @@ function RackPanel() {
       <div style={{ height: 44, padding: '0 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-surface)', flexShrink: 0 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Signal Chain</span>
         <div style={{ flex: 1 }} />
+
+        {/* ── Chain processing ── */}
+        <button className="btn btn-ghost" onClick={toggleBypassAll} title="Bypass every plugin in the chain (signal passes through clean)" style={{ fontSize: 11, background: bypassAll ? 'rgba(245,200,66,0.2)' : undefined, color: bypassAll ? 'var(--yellow)' : undefined, borderColor: bypassAll ? 'var(--yellow)' : undefined }}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.4" fill="none" /><path d="M2 10L10 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+          {bypassAll ? 'Bypassed' : 'Bypass All'}<kbd style={{ fontSize: 9, background: 'var(--bg-active)', padding: '0 4px', borderRadius: 2 }}>Space</kbd>
+        </button>
+
+        <ToolbarDivider />
+
+        {/* ── Listening / output ── */}
+        <button
+          className="btn btn-ghost"
+          onClick={toggleMonitor}
+          title={monitorMuted
+            ? 'Local monitor is OFF — you hear nothing, but apps still receive the send'
+            : 'You are monitoring — you hear the processed mic locally'}
+          style={{ fontSize: 11, background: monitorMuted ? undefined : 'rgba(80,200,120,0.16)', color: monitorMuted ? 'var(--text-secondary)' : 'var(--green)', borderColor: monitorMuted ? undefined : 'var(--green)' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M2 5h3l3.5-3v10L5 9H2V5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            {monitorMuted
+              ? <path d="M11 5l2.5 4M13.5 5L11 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              : <path d="M10.5 5a3.2 3.2 0 010 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
+          </svg>
+          {monitorMuted ? 'Monitor Off' : 'Monitor'}
+        </button>
         <button
           className="btn btn-ghost"
           onClick={toggleMute}
+          title="Master mute — kills both your monitor AND the send to apps"
           style={{ fontSize: 11, background: muted ? 'rgba(255,85,85,0.18)' : undefined, color: muted ? 'var(--red)' : undefined, borderColor: muted ? 'var(--red)' : undefined }}
         >
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
@@ -187,13 +231,13 @@ function RackPanel() {
           </svg>
           {muted ? 'Muted' : 'Mute'}
         </button>
-        <button className="btn btn-ghost" onClick={() => setShowSavePreset(true)} style={{ fontSize: 11 }}>
+
+        <ToolbarDivider />
+
+        {/* ── Preset ── */}
+        <button className="btn btn-ghost" onClick={() => setShowSavePreset(true)} title="Save the current chain as a preset" style={{ fontSize: 11 }}>
           <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" fill="none" /><path d="M3 7.5L5 9.5L9 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           Save<kbd style={{ fontSize: 9, background: 'var(--bg-active)', padding: '0 4px', borderRadius: 2 }}>Ctrl+S</kbd>
-        </button>
-        <button className="btn btn-ghost" onClick={toggleBypassAll} style={{ fontSize: 11, background: bypassAll ? 'rgba(245,200,66,0.2)' : undefined, color: bypassAll ? 'var(--yellow)' : undefined, borderColor: bypassAll ? 'var(--yellow)' : undefined }}>
-          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.4" fill="none" /><path d="M2 10L10 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-          {bypassAll ? 'Bypassed' : 'Bypass All'}<kbd style={{ fontSize: 9, background: 'var(--bg-active)', padding: '0 4px', borderRadius: 2 }}>Space</kbd>
         </button>
       </div>
 

@@ -16,6 +16,10 @@ function inTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+// True once we've seen the engine's first "ready". A subsequent "ready" means
+// the engine was restarted (crash recovery) and we must re-push our state.
+let engineHasStarted = false
+
 export function sendEngineCommand(cmd: object) {
   if (!inTauri()) return
   invoke('engine_command', { cmd }).catch((e) => console.error('[engine_command]', e))
@@ -35,6 +39,15 @@ function handleEngineEvent(event: unknown) {
   switch (e['event']) {
     case 'ready': {
       store.setEngineConnected(true)
+      if (engineHasStarted) {
+        // This is a RESTART (engine crashed and Rust respawned it). The fresh
+        // engine is at defaults, so push our current routing + chain + gains
+        // back into it, then refresh the device list.
+        store.reapplyToEngine()
+        sendEngineCommand({ cmd: 'get_devices' })
+        break
+      }
+      engineHasStarted = true
       store.setRoutingFromEngine({
         sampleRate:     e['sampleRate'] as number | undefined,
         bufferSize:     e['bufferSize'] as number | undefined,
@@ -64,14 +77,16 @@ function handleEngineEvent(event: unknown) {
       store.setRealDevices(inputs.map(d => d.name), outputs.map(d => d.name))
       store.setRealBackends(types.map(t => t.name))
       store.setRealChannels(inCh, outCh)
+      store.setRealVirtualOutputs((e['virtualOutputs'] as string[]) ?? [])
       store.setRoutingFromEngine({
-        sampleRate:     e['sampleRate'] as number | undefined,
-        bufferSize:     e['bufferSize'] as number | undefined,
-        backend:        e['backend'] as string | undefined,
-        inputDeviceId:  e['inputDevice'] as string | undefined,
-        outputDeviceId: e['outputDevice'] as string | undefined,
-        inputChannel:   e['inputChannel'] as number | undefined,
-        outputChannel:  e['outputChannel'] as number | undefined,
+        sampleRate:      e['sampleRate'] as number | undefined,
+        bufferSize:      e['bufferSize'] as number | undefined,
+        backend:         e['backend'] as string | undefined,
+        inputDeviceId:   e['inputDevice'] as string | undefined,
+        outputDeviceId:  e['outputDevice'] as string | undefined,
+        inputChannel:    e['inputChannel'] as number | undefined,
+        outputChannel:   e['outputChannel'] as number | undefined,
+        virtualOutputId: e['virtualOutput'] as string | undefined,
       })
       break
     }
@@ -94,6 +109,7 @@ function handleEngineEvent(event: unknown) {
 
     case 'plugins_scanned': {
       store.setScannedPlugins((e['plugins'] as unknown[]) ?? [])
+      store.setPluginBlacklist((e['blacklist'] as string[]) ?? [])
       store.setScanFinished()
       break
     }

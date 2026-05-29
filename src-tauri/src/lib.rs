@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use tauri::{
@@ -19,6 +20,12 @@ struct EngineState {
     // frontend calls `frontend_ready`. Prevents a startup race from dropping
     // the initial ready/devices/preset_list/chain events.
     outbox: Mutex<(bool, Vec<serde_json::Value>)>,
+    // Set true when the app is intentionally quitting, so the reader thread
+    // does NOT try to respawn a deliberately-killed engine.
+    shutting_down: AtomicBool,
+    // Count of consecutive *quick* crashes (engine died < 3s after launch).
+    // Used to stop a runaway crash loop instead of respawning forever.
+    crash_streak: AtomicU32,
 }
 
 impl Default for EngineState {
@@ -27,9 +34,13 @@ impl Default for EngineState {
             child: Mutex::new(None),
             stdin: Mutex::new(None),
             outbox: Mutex::new((false, Vec::new())),
+            shutting_down: AtomicBool::new(false),
+            crash_streak: AtomicU32::new(0),
         }
     }
 }
+
+const MAX_CRASH_STREAK: u32 = 5;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Locate the engine binary (resource dir when bundled, build dir in dev)
@@ -107,6 +118,7 @@ fn spawn_engine(app: &AppHandle) {
 
     // Reader thread: forward each JSON line to the frontend (buffer until ready)
     let app_handle = app.clone();
+    let started = std::time::Instant::now();
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
@@ -120,11 +132,40 @@ fn spawn_engine(app: &AppHandle) {
                 Err(_) => break,
             }
         }
-        // stdout closed → engine exited
+        // stdout closed → engine exited. Decide whether to respawn.
+        let state = app_handle.state::<EngineState>();
+        if state.shutting_down.load(Ordering::SeqCst) {
+            return; // deliberate shutdown — stay down
+        }
+
+        // Crash-loop guard: only count it as a "quick crash" if the engine
+        // died soon after launch. A long-lived engine resets the streak.
+        let streak = if started.elapsed().as_secs() < 3 {
+            state.crash_streak.fetch_add(1, Ordering::SeqCst) + 1
+        } else {
+            state.crash_streak.store(0, Ordering::SeqCst);
+            1
+        };
+
+        if streak > MAX_CRASH_STREAK {
+            emit_or_buffer(&app_handle, serde_json::json!({
+                "event": "engine_offline",
+                "message": "Audio engine keeps crashing on startup. \
+                            Check your audio device/driver, then restart the app."
+            }));
+            return;
+        }
+
         emit_or_buffer(&app_handle, serde_json::json!({
             "event": "engine_offline",
-            "message": "Audio engine stopped"
+            "message": "Audio engine stopped — restarting…"
         }));
+
+        // Brief backoff so we don't hammer a failing device, then respawn.
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        if !state.shutting_down.load(Ordering::SeqCst) {
+            spawn_engine(&app_handle);
+        }
     });
 }
 
@@ -312,7 +353,14 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        app.state::<EngineState>().shutting_down.store(true, Ordering::SeqCst);
+                        // Best-effort: kill the engine child so it doesn't linger
+                        if let Some(mut c) = app.state::<EngineState>().child.lock().unwrap().take() {
+                            let _ = c.kill();
+                        }
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {

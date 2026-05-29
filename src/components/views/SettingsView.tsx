@@ -12,8 +12,10 @@ export default function SettingsView() {
   const {
     theme, toggleTheme, engineConnected, engineScanProgress,
     startWithWindows, startMinimized, closeToTray, autoBypass, setSetting,
-    scanPaths, setScanPaths,
+    scanPaths, setScanPaths, pluginBlacklist, retryBlacklisted,
   } = useStore()
+
+  const fileName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
 
   // Scanning is driven by the engine; progress arrives via engineScanProgress
   const scanning = engineScanProgress !== null
@@ -138,6 +140,24 @@ export default function SettingsView() {
               {scanning && engineScanProgress && (
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--mono)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {Math.round(engineScanProgress.progress * 100)}% · {engineScanProgress.plugin}
+                </div>
+              )}
+              {!scanning && pluginBlacklist.length > 0 && (
+                <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(245,200,66,0.08)', border: '1px solid rgba(245,200,66,0.3)', borderRadius: 6, fontSize: 10.5, color: 'var(--yellow)', lineHeight: 1.5 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    {pluginBlacklist.length} plugin{pluginBlacklist.length > 1 ? 's' : ''} skipped (crashed during scan)
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                    {pluginBlacklist.map(f => fileName(f)).join(', ')}
+                  </div>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 10.5, marginTop: 8, justifyContent: 'center', width: '100%' }}
+                    onClick={retryBlacklisted}
+                    disabled={!engineConnected}
+                  >
+                    Retry skipped plugins
+                  </button>
                 </div>
               )}
             </div>

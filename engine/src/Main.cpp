@@ -36,8 +36,10 @@ public:
         obj->setProperty("slots", sl);
         ipc.sendEvent(obj);
 
-        // Notify the UI once when plugin parameters change (incl. from editors)
-        if (engine.consumeParamDirty())
+        // Notify the UI once when plugin parameters change (incl. from editors).
+        // Suppress while a chain is loading — state restore fires param changes
+        // that are NOT user edits and would falsely mark the preset modified.
+        if (engine.consumeParamDirty() && !engine.isLoadingChain())
             ipc.sendEvent(makeEvent("modified"));
     }
 
@@ -244,6 +246,11 @@ private:
         e->setProperty("outputChannel", chVar["outputChannel"]);
         e->setProperty("sampleRate",    engine->getCurrentSampleRate());
         e->setProperty("bufferSize",    engine->getCurrentBufferSize());
+        // Virtual-output (send) device list — always Windows Audio outputs
+        juce::Array<juce::var> vouts;
+        for (const auto& n : engine->getOutputDevicesFor("Windows Audio")) vouts.add(n);
+        e->setProperty("virtualOutputs", vouts);
+        e->setProperty("virtualOutput",  engine->getVirtualOutput());
         ipc->sendEvent(e);
     }
 
@@ -317,7 +324,13 @@ private:
     // in order (sync VST3 instantiation is unreliable).
     void loadChainAsync(juce::Array<juce::var> slots, int index)
     {
-        if (index >= slots.size()) { engine->clearParamDirty(); sendChain(); return; }
+        if (index >= slots.size())
+        {
+            engine->clearParamDirty();
+            engine->setLoadingChain(false);   // re-enable change notifications
+            sendChain();
+            return;
+        }
 
         const juce::var slot = slots[index];
         juce::PluginDescription desc;
@@ -421,6 +434,16 @@ private:
         {
             engine->setMuted((bool)cmd["value"]);
         }
+        else if (type == "set_monitor_muted")
+        {
+            engine->setMonitorMuted((bool)cmd["value"]);
+        }
+        else if (type == "set_virtual_output")
+        {
+            auto err = engine->setVirtualOutput(cmd["name"].toString());
+            if (err.isEmpty()) sendDeviceList();
+            else sendError(err);
+        }
         else if (type == "set_input_channel")
         {
             auto err = engine->setInputChannel((int)cmd["index"]);
@@ -455,8 +478,18 @@ private:
                 [this](const juce::var& pluginList) {
                     auto* e = makeEvent("plugins_scanned");
                     e->setProperty("plugins", pluginList);
+                    // Report any plugins that were skipped because they crashed
+                    // a previous scan, so the UI can surface them.
+                    juce::Array<juce::var> bl;
+                    for (const auto& f : engine->scanner().blacklistedFiles()) bl.add(f);
+                    e->setProperty("blacklist", bl);
                     ipc->sendEvent(e);
                 });
+        }
+        else if (type == "clear_blacklist")
+        {
+            engine->scanner().clearBlacklist();
+            sendOk("clear_blacklist");
         }
 
         // ── Plugin chain ──────────────────────────────────────────────────────
@@ -535,92 +568,11 @@ private:
             // UI owns optimistic updates; engine is ground truth on load/save
         }
 
-        // ── Presets ───────────────────────────────────────────────────────────
-        else if (type == "save_preset")
-        {
-            const bool ok = presets->savePreset(
-                cmd["name"].toString(),
-                engine->chain().toVar(),
-                (float)cmd["inputGain"],
-                (float)cmd["outputGain"]);
-
-            auto* e = makeEvent("preset_saved");
-            e->setProperty("ok",   ok);
-            e->setProperty("name", cmd["name"].toString());
-            e->setProperty("list", presets->listPresets());
-            ipc->sendEvent(e);
-        }
-        else if (type == "load_preset")
-        {
-            const juce::var data = presets->loadPreset(cmd["name"].toString());
-            if (!data.isObject()) { sendError("Preset not found"); return; }
-
-            // Clear chain (and any open editor windows), reload from preset data
-            editors.clear();
-            while (engine->chain().numPlugins() > 0)
-                engine->chain().removePlugin(0);
-
-            if (const auto* arr = data["chain"].getArray())
-            {
-                for (const auto& slot : *arr)
-                {
-                    juce::PluginDescription desc;
-                    if (!engine->scanner().describeFile(slot["file"].toString(), desc))
-                        continue;
-
-                    double sr = engine->getCurrentSampleRate(); if (sr <= 0) sr = 48000.0;
-                    int    bs = engine->getCurrentBufferSize(); if (bs <= 0) bs = 512;
-                    juce::String errMsg;
-                    auto inst = engine->scanner().getFormatManager()
-                        .createPluginInstance(desc, sr, bs, errMsg);
-
-                    if (!inst) continue;
-
-                    // Restore parameters
-                    if (const auto* params = slot["parameters"].getArray())
-                    {
-                        for (const auto& p : *params)
-                        {
-                            int idx = (int)p["index"];
-                            auto& ps = inst->getParameters();
-                            if (juce::isPositiveAndBelow(idx, ps.size()))
-                                ps[idx]->setValue((float)p["value"]);
-                        }
-                    }
-
-                    engine->chain().addPlugin(std::move(inst), desc);
-
-                    // enabled / bypassed state
-                    int slotIdx = engine->chain().numPlugins() - 1;
-                    engine->chain().setEnabled (slotIdx, (bool)slot["enabled"]);
-                    engine->chain().setBypassed(slotIdx, (bool)slot["bypassed"]);
-                }
-            }
-
-            auto* e = makeEvent("preset_loaded");
-            e->setProperty("name",        data["name"].toString());
-            e->setProperty("inputGain",   data["inputGain"]);
-            e->setProperty("outputGain",  data["outputGain"]);
-            e->setProperty("chain",       engine->chain().toVar());
-            ipc->sendEvent(e);
-        }
-        else if (type == "list_presets")
-        {
-            auto* e = makeEvent("preset_list");
-            e->setProperty("list", presets->listPresets());
-            ipc->sendEvent(e);
-        }
-        else if (type == "delete_preset")
-        {
-            presets->deletePreset(cmd["name"].toString());
-            auto* e = makeEvent("preset_list");
-            e->setProperty("list", presets->listPresets());
-            ipc->sendEvent(e);
-        }
-
-        // ── Load a chain passed directly from the UI (Rust-managed presets) ────
+        // ── Presets are Rust-managed (see src-tauri); the engine only loads a
+        //    chain passed directly from the UI via "load_chain" below. ─────────
         else if (type == "load_chain")
         {
+            engine->setLoadingChain(true);   // suppress spurious "modified" events
             editors.clear();
             while (engine->chain().numPlugins() > 0)
                 engine->chain().removePlugin(0);

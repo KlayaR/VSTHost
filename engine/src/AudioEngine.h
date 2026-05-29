@@ -43,13 +43,29 @@ public:
     bool consumeParamDirty() { return paramDirty.exchange(false); }
     void clearParamDirty()   { paramDirty.store(false); }
 
+    // True while a chain is being (re)built programmatically. While set, the
+    // param-changed notifications triggered by restoring plugin state must NOT
+    // be reported to the UI as user edits.
+    void setLoadingChain(bool v) { loadingChain.store(v); }
+    bool isLoadingChain() const  { return loadingChain.load(); }
+
     // ── Input / output gain (dB) ──────────────────────────────────────────────
     void setInputGainDb (float db) { inputGain.store (juce::Decibels::decibelsToGain(db)); }
     void setOutputGainDb(float db) { outputGain.store(juce::Decibels::decibelsToGain(db)); }
 
-    // ── Mute (silences the processed output) ──────────────────────────────────
-    void setMuted(bool m) { muted.store(m); }
-    bool isMuted() const  { return muted.load(); }
+    // ── Mute / monitor ─────────────────────────────────────────────────────────
+    // muted        = master mute (kills monitor + virtual send)
+    // monitorMuted = silence only the monitor output (apps still get the send)
+    void setMuted(bool m)        { muted.store(m); }
+    bool isMuted() const         { return muted.load(); }
+    void setMonitorMuted(bool m) { monitorMuted.store(m); }
+    bool isMonitorMuted() const  { return monitorMuted.load(); }
+
+    // ── Virtual output send (a 2nd output device for Discord/OBS) ─────────────
+    juce::StringArray getOutputDevicesFor(const juce::String& backendType);
+    juce::String      setVirtualOutput(const juce::String& deviceName); // "" = off
+    juce::String      getVirtualOutput() const { return virtualOutName; }
+    void pullSendAudio(float* const* out, int numOut, int numSamples);  // send-device callback
 
     // ── CPU usage 0..1 (from the audio device) ────────────────────────────────
     double getCpuUsage() { return dm.getCpuUsage(); }
@@ -71,19 +87,31 @@ public:
     void audioDeviceError(const juce::String& errorMessage) override;
 
 private:
+    void pushSendAudio(const juce::AudioBuffer<float>& buf, int numSamples, bool silence);
+
     juce::AudioDeviceManager dm;
     PluginChain              pluginChain;
     PluginScanner            pluginScanner;
 
     std::atomic<float> inputLevel  { 0.0f };
     std::atomic<float> outputLevel { 0.0f };
-    std::atomic<bool>  paramDirty  { false };
+    std::atomic<bool>  paramDirty   { false };
+    std::atomic<bool>  loadingChain { false };
     std::atomic<float> inputGain   { 1.0f };
     std::atomic<float> outputGain  { 1.0f };
     std::atomic<bool>  muted       { false };
+    std::atomic<bool>  monitorMuted{ false };
     float inputSmooth  = 0.0f;
     float outputSmooth = 0.0f;
 
     juce::AudioBuffer<float> processBuffer;
     juce::MidiBuffer         midiBuffer;
+
+    // ── Virtual output send: 2nd device fed by a lock-free FIFO ───────────────
+    juce::AudioDeviceManager       sendDm;
+    std::unique_ptr<juce::AudioIODeviceCallback> sendCallback;
+    juce::AbstractFifo             sendFifo { 1 << 15 };
+    juce::AudioBuffer<float>       sendRing;          // 2 x (1<<15)
+    std::atomic<bool>              sendActive { false };
+    juce::String                   virtualOutName;
 };

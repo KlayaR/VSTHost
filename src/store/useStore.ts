@@ -76,6 +76,8 @@ interface AppState {
   slotLevels: number[]
   muted: boolean
   toggleMute: () => void
+  monitorMuted: boolean
+  toggleMonitor: () => void
   presetModified: boolean
 
   setInputGain:      (v: number) => void
@@ -110,19 +112,25 @@ interface AppState {
   availablePlugins: Plugin[]
   toggleFavorite:   (pluginId: string) => void
   setScannedPlugins:(raw: unknown[]) => void
+  pluginBlacklist:  string[]
+  setPluginBlacklist: (files: string[]) => void
+  retryBlacklisted: () => void
 
   // Routing
   routing: RoutingSettings
   setRouting: (r: Partial<RoutingSettings>) => void
   setRoutingFromEngine: (r: Partial<RoutingSettings>) => void
+  reapplyToEngine: () => void
   realInputDevices:  string[]
   realOutputDevices: string[]
   realBackends: string[]
   realInputChannels: string[]
   realOutputChannels: string[]
+  realVirtualOutputs: string[]
   setRealDevices: (inputs: string[], outputs: string[]) => void
   setRealBackends: (b: string[]) => void
   setRealChannels: (inputs: string[], outputs: string[]) => void
+  setRealVirtualOutputs: (v: string[]) => void
 
   // Persistence
   hydrate: (data: Record<string, unknown>) => void
@@ -173,6 +181,12 @@ export const useStore = create<AppState>((set, get) => ({
     const next = !get().muted
     set({ muted: next })
     sendEngineCommand({ cmd: 'set_mute', value: next })
+  },
+  monitorMuted: false,
+  toggleMonitor: () => {
+    const next = !get().monitorMuted
+    set({ monitorMuted: next })
+    sendEngineCommand({ cmd: 'set_monitor_muted', value: next })
   },
   presetModified: false,
 
@@ -388,6 +402,14 @@ export const useStore = create<AppState>((set, get) => ({
     set({ availablePlugins: plugins, engineScanProgress: null })
     schedulePersist()
   },
+  pluginBlacklist: [],
+  setPluginBlacklist: (files) => set({ pluginBlacklist: files }),
+  retryBlacklisted: () => {
+    sendEngineCommand({ cmd: 'clear_blacklist' })
+    set({ pluginBlacklist: [] })
+    sendEngineCommand({ cmd: 'scan_plugins', paths: get().scanPaths })
+    set({ engineScanProgress: { plugin: '', progress: 0 } })
+  },
 
   routing:    DEFAULT_ROUTING,
   setRouting: (r) => {
@@ -399,7 +421,25 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.outputDeviceId) sendEngineCommand({ cmd: 'set_output_device', name: r.outputDeviceId })
     if (r.inputChannel  !== undefined) sendEngineCommand({ cmd: 'set_input_channel',  index: r.inputChannel })
     if (r.outputChannel !== undefined) sendEngineCommand({ cmd: 'set_output_channel', index: r.outputChannel })
+    if (r.virtualOutputId !== undefined) sendEngineCommand({ cmd: 'set_virtual_output', name: r.virtualOutputId })
     schedulePersist()
+  },
+  // Push the full current state (routing → chain → gains) to a freshly (re)started
+  // engine, e.g. after an auto-restart following a crash. Order matters: open the
+  // device/backend before loading plugins, then restore gains.
+  reapplyToEngine: () => {
+    const { routing, slots, inputGain, outputGain } = get()
+    if (routing.backend)        sendEngineCommand({ cmd: 'set_backend', name: routing.backend })
+    if (routing.inputDeviceId)  sendEngineCommand({ cmd: 'set_input_device',  name: routing.inputDeviceId })
+    if (routing.outputDeviceId) sendEngineCommand({ cmd: 'set_output_device', name: routing.outputDeviceId })
+    if (routing.sampleRate)     sendEngineCommand({ cmd: 'set_sample_rate', value: routing.sampleRate })
+    if (routing.bufferSize)     sendEngineCommand({ cmd: 'set_buffer_size', value: routing.bufferSize })
+    if (routing.inputChannel  !== undefined && routing.inputChannel  >= 0) sendEngineCommand({ cmd: 'set_input_channel',  index: routing.inputChannel })
+    if (routing.outputChannel !== undefined && routing.outputChannel >= 0) sendEngineCommand({ cmd: 'set_output_channel', index: routing.outputChannel })
+    if (routing.virtualOutputId) sendEngineCommand({ cmd: 'set_virtual_output', name: routing.virtualOutputId })
+    sendEngineCommand({ cmd: 'load_chain', chain: serializeChain(slots) })
+    sendEngineCommand({ cmd: 'set_input_gain',  value: inputGain })
+    sendEngineCommand({ cmd: 'set_output_gain', value: outputGain })
   },
   setRoutingFromEngine: (r) => {
     const clean: Partial<RoutingSettings> = {}
@@ -419,9 +459,11 @@ export const useStore = create<AppState>((set, get) => ({
   realBackends:      [],
   realInputChannels: [],
   realOutputChannels: [],
+  realVirtualOutputs: [],
   setRealDevices: (inputs, outputs) => set({ realInputDevices: inputs, realOutputDevices: outputs }),
   setRealBackends: (b) => set({ realBackends: b }),
   setRealChannels: (inputs, outputs) => set({ realInputChannels: inputs, realOutputChannels: outputs }),
+  setRealVirtualOutputs: (v) => set({ realVirtualOutputs: v }),
 
   // ── Persistence ────────────────────────────────────────────────────────────
   hydrate: (data) => {

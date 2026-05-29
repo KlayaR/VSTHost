@@ -41,6 +41,16 @@ public:
     // Serialise the known plugin list as a juce::var array
     juce::var knownPluginsToVar() const;
 
+    // Plugins that crashed during a previous scan and are now skipped.
+    juce::StringArray blacklistedFiles() const { return knownPlugins.getBlacklistedFiles(); }
+
+    // Forget the blacklist + dead-man's-pedal so a rescan retries everything.
+    void clearBlacklist();
+
+    // Location of the dead-man's-pedal file (records the plugin currently being
+    // scanned, so that if the process crashes we know which one to blacklist).
+    static juce::File deadMansPedalFile();
+
 private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList          knownPlugins;

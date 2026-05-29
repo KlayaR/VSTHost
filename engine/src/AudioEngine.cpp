@@ -1,8 +1,108 @@
 #include "AudioEngine.h"
 
+// Callback for the virtual-output (send) device: pulls processed audio from
+// the engine's FIFO and writes it to the second device's output.
+struct SendDeviceCallback : public juce::AudioIODeviceCallback
+{
+    explicit SendDeviceCallback(AudioEngine& e) : engine(e) {}
+    void audioDeviceIOCallbackWithContext(const float* const*, int,
+                                          float* const* output, int numOutputChannels,
+                                          int numSamples,
+                                          const juce::AudioIODeviceCallbackContext&) override
+    {
+        engine.pullSendAudio(output, numOutputChannels, numSamples);
+    }
+    void audioDeviceAboutToStart(juce::AudioIODevice*) override {}
+    void audioDeviceStopped() override {}
+    AudioEngine& engine;
+};
+
 AudioEngine::AudioEngine()
 {
     pluginChain.onParameterChanged = [this] { paramDirty.store(true); };
+    sendRing.setSize(2, 1 << 15);
+    sendCallback = std::make_unique<SendDeviceCallback>(*this);
+}
+
+// ── Virtual-output FIFO bridge ───────────────────────────────────────────────
+void AudioEngine::pushSendAudio(const juce::AudioBuffer<float>& buf, int numSamples, bool silence)
+{
+    int s1, sz1, s2, sz2;
+    sendFifo.prepareToWrite(numSamples, s1, sz1, s2, sz2);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const int src = juce::jmin(ch, buf.getNumChannels() - 1);
+        const float* in = buf.getReadPointer(src);
+        if (silence)
+        {
+            if (sz1) sendRing.clear(ch, s1, sz1);
+            if (sz2) sendRing.clear(ch, s2, sz2);
+        }
+        else
+        {
+            if (sz1) sendRing.copyFrom(ch, s1, in,        sz1);
+            if (sz2) sendRing.copyFrom(ch, s2, in + sz1,  sz2);
+        }
+    }
+    sendFifo.finishedWrite(sz1 + sz2);
+}
+
+void AudioEngine::pullSendAudio(float* const* out, int numOut, int numSamples)
+{
+    int s1, sz1, s2, sz2;
+    sendFifo.prepareToRead(numSamples, s1, sz1, s2, sz2);
+    for (int ch = 0; ch < numOut; ++ch)
+    {
+        if (!out[ch]) continue;
+        const int src = juce::jmin(ch, 1);
+        if (sz1) juce::FloatVectorOperations::copy(out[ch],       sendRing.getReadPointer(src, s1), sz1);
+        if (sz2) juce::FloatVectorOperations::copy(out[ch] + sz1, sendRing.getReadPointer(src, s2), sz2);
+        for (int i = sz1 + sz2; i < numSamples; ++i) out[ch][i] = 0.0f;   // underrun → silence
+    }
+    sendFifo.finishedRead(sz1 + sz2);
+}
+
+juce::StringArray AudioEngine::getOutputDevicesFor(const juce::String& backendType)
+{
+    juce::StringArray names;
+    for (auto* t : dm.getAvailableDeviceTypes())
+        if (t->getTypeName() == backendType)
+        {
+            t->scanForDevices();
+            names = t->getDeviceNames(false);   // outputs
+            break;
+        }
+    return names;
+}
+
+juce::String AudioEngine::setVirtualOutput(const juce::String& deviceName)
+{
+    // Tear down any existing send device
+    sendActive.store(false);
+    if (sendCallback) sendDm.removeAudioCallback(sendCallback.get());
+    sendDm.closeAudioDevice();
+    virtualOutName = {};
+
+    if (deviceName.isEmpty()) return {};
+
+    // A fresh AudioDeviceManager has NO device types until they're created.
+    // Touching the type list forces JUCE to build the default backends so that
+    // setCurrentAudioDeviceType("Windows Audio") actually resolves to a type.
+    sendDm.getAvailableDeviceTypes();
+    sendDm.setCurrentAudioDeviceType("Windows Audio", true);
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    setup.outputDeviceName         = deviceName;
+    setup.inputDeviceName          = {};
+    setup.sampleRate               = getCurrentSampleRate();
+    setup.useDefaultOutputChannels = true;
+    auto err = sendDm.setAudioDeviceSetup(setup, true);
+    if (err.isNotEmpty()) return "Virtual output: " + err;
+
+    sendFifo.reset();
+    sendDm.addAudioCallback(sendCallback.get());
+    virtualOutName = deviceName;
+    sendActive.store(true);
+    return {};
 }
 
 AudioEngine::~AudioEngine()
@@ -43,6 +143,9 @@ juce::String AudioEngine::initialise()
 
 void AudioEngine::shutdown()
 {
+    sendActive.store(false);
+    if (sendCallback) sendDm.removeAudioCallback(sendCallback.get());
+    sendDm.closeAudioDevice();
     dm.removeAudioCallback(this);
     dm.closeAudioDevice();
     pluginChain.releaseResources();
@@ -268,19 +371,31 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     midiBuffer.clear();
     pluginChain.processBlock(processBuffer, midiBuffer);
 
-    // ── Apply output gain (and mute) ──────────────────────────────────────────
+    // ── Apply output gain ─────────────────────────────────────────────────────
     processBuffer.applyGain(outputGain.load());
-    if (muted.load()) processBuffer.clear();
 
-    // ── Measure output level ─────────────────────────────────────────────────
+    // ── Measure output level (post-gain, pre-mute) ────────────────────────────
     const float outPeak = processBuffer.getMagnitude(0, numSamples);
     outputSmooth = outputSmooth * 0.92f + outPeak * 0.08f;
     outputLevel.store(outputSmooth);
 
-    // ── Write to outputs ─────────────────────────────────────────────────────
+    const bool master  = muted.load();          // kills everything
+    const bool monMute = monitorMuted.load();   // kills only the monitor
+
+    // ── Virtual send (to apps): silenced only by master mute ──────────────────
+    if (sendActive.load())
+        pushSendAudio(processBuffer, numSamples, master);
+
+    // ── Monitor output (this device): silenced by master OR monitor mute ──────
+    const bool silenceMonitor = master || monMute;
     for (int ch = 0; ch < numOutputChannels; ++ch)
     {
         if (!outputChannelData[ch]) continue;
+        if (silenceMonitor)
+        {
+            juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
+            continue;
+        }
         const int src = juce::jmin(ch, processBuffer.getNumChannels() - 1);
         juce::FloatVectorOperations::copy(
             outputChannelData[ch],

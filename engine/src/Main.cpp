@@ -530,9 +530,9 @@ private:
         {
             engine->setLimiterEnabled((bool)cmd["value"]);
         }
-        else if (type == "set_limiter_threshold")
+        else if (type == "set_limiter_input_gain")
         {
-            engine->setLimiterThreshold((float)cmd["value"]);
+            engine->setLimiterInputGain((float)cmd["value"]);
         }
         else if (type == "set_virtual_output")
         {

@@ -610,9 +610,9 @@ function LimiterGrMeter() {
 
 function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOutputGain: (v: number) => void }) {
   const limiterEnabled   = useStore(s => s.limiterEnabled)
-  const limiterThreshold = useStore(s => s.limiterThreshold)
+  const limiterInputGain = useStore(s => s.limiterInputGain)
   const setLimiterEnabled   = useStore(s => s.setLimiterEnabled)
-  const setLimiterThreshold = useStore(s => s.setLimiterThreshold)
+  const setLimiterInputGain = useStore(s => s.setLimiterInputGain)
 
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -644,20 +644,21 @@ function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOut
           LIMIT
         </button>
 
-        {/* Ceiling slider — max is always -1 dBFS, output can never exceed that */}
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0 }}>CEIL</span>
+        {/* DRIVE — controls how hot the signal hits the limiter.
+            Push right = louder / more limiting. Ceiling is always fixed at −1 dBFS. */}
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0 }}>DRIVE</span>
         <input
-          type="range" min={-24} max={-1} step={0.5}
-          value={Math.min(limiterThreshold, -1)}
+          type="range" min={-12} max={12} step={0.5}
+          value={limiterInputGain}
           disabled={!limiterEnabled}
-          onChange={e => setLimiterThreshold(parseFloat(e.target.value))}
-          onClick={e => { if (e.ctrlKey) setLimiterThreshold(-3) }}
+          onChange={e => setLimiterInputGain(parseFloat(e.target.value))}
+          onClick={e => { if (e.ctrlKey) setLimiterInputGain(0) }}
           onDragStart={e => e.preventDefault()}
           style={{ width: 80, flexShrink: 0, opacity: limiterEnabled ? 1 : 0.4, accentColor: 'var(--accent)', cursor: limiterEnabled ? 'pointer' : 'default' }}
-          title={`Ceiling: ${limiterThreshold} dBFS  ·  Hard wall at −1 dBFS  ·  Ctrl+click to reset to −3`}
+          title={`Drive: ${limiterInputGain > 0 ? '+' : ''}${limiterInputGain} dB into limiter  ·  Ceiling always −1 dBFS  ·  Ctrl+click to reset`}
         />
-        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text-secondary)', width: 32, textAlign: 'right', flexShrink: 0 }}>
-          {limiterThreshold.toFixed(1)}
+        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: limiterInputGain !== 0 ? 'var(--accent)' : 'var(--text-secondary)', width: 32, textAlign: 'right', flexShrink: 0 }}>
+          {limiterInputGain > 0 ? '+' : ''}{limiterInputGain.toFixed(1)}
         </span>
 
         <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>GR</span>

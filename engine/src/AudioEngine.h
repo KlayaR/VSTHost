@@ -11,12 +11,12 @@ struct OutputLimiter
 {
     // ── Controls (atomics — safe to write from any thread) ────────────────────
     std::atomic<bool>  enabled     { true };
-    std::atomic<float> thresholdDb { -3.0f };  // ceiling/threshold (≤ -1 dBFS)
+    // How much to boost (or cut) the signal going INTO the limiter.
+    // 0 dB = unity; +6 dB = drives the limiter harder (louder / more limiting).
+    // The output ceiling is always fixed at -1 dBFS — this is not a ceiling knob.
+    std::atomic<float> inputGainDb { 0.0f };
 
-    // Absolute hard ceiling — applied after envelope limiting as a true
-    // brick wall so the output can NEVER exceed this, even if the envelope
-    // follower's 0.1 ms attack lets the very first sample of a transient
-    // through slightly hot.
+    // Output is always brickwalled here — not user-adjustable.
     static constexpr float hardCeilingDb = -1.0f;
 
     // ── Metering: 0 = no reduction, 1 = fully limited ────────────────────────
@@ -41,10 +41,13 @@ struct OutputLimiter
     {
         if (!enabled.load()) { grSmoothed.store(0.0f); return; }
 
-        // Ceiling from user control, clamped to never exceed the hard ceiling
-        const float userCeil  = juce::jmin(juce::Decibels::decibelsToGain(thresholdDb.load()),
-                                            juce::Decibels::decibelsToGain(hardCeilingDb));
-        const float thresh = userCeil;
+        // Apply input drive — boosts or cuts the signal before limiting
+        const float drive = juce::Decibels::decibelsToGain(inputGainDb.load());
+        if (std::abs(drive - 1.0f) > 0.001f)
+            buffer.applyGain(drive);
+
+        // Ceiling is always -1 dBFS — not user-adjustable
+        const float thresh = juce::Decibels::decibelsToGain(hardCeilingDb);
         const int   nc     = buffer.getNumChannels();
         const int   ns     = buffer.getNumSamples();
         float       ge     = gainEnv;
@@ -132,10 +135,10 @@ public:
     float getLimiterGr()   const { return limiter.grSmoothed.load(); }
 
     // ── Output limiter controls ───────────────────────────────────────────────
-    void setLimiterEnabled  (bool  v)  { limiter.enabled.store(v); }
-    void setLimiterThreshold(float db) { limiter.thresholdDb.store(db); }
-    bool  getLimiterEnabled()   const  { return limiter.enabled.load(); }
-    float getLimiterThreshold() const  { return limiter.thresholdDb.load(); }
+    void  setLimiterEnabled  (bool  v)  { limiter.enabled.store(v); }
+    void  setLimiterInputGain(float db) { limiter.inputGainDb.store(db); }
+    bool  getLimiterEnabled()    const  { return limiter.enabled.load(); }
+    float getLimiterInputGain()  const  { return limiter.inputGainDb.load(); }
 
     // ── Parameter-change dirty flag (set when any plugin param changes) ───────
     bool consumeParamDirty() { return paramDirty.exchange(false); }

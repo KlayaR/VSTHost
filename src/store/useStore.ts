@@ -104,9 +104,9 @@ interface AppState {
 
   // Limiter
   limiterEnabled:   boolean
-  limiterThreshold: number    // dB
+  limiterInputGain: number    // dB
   setLimiterEnabled:   (v: boolean) => void
-  setLimiterThreshold: (db: number) => void
+  setLimiterInputGain: (db: number) => void
   setChainFromEngine: (raw: unknown[]) => void
   pendingSaveName:    string | null
 
@@ -222,9 +222,9 @@ export const useStore = create<AppState>((set, get) => ({
   slotInLevels: [],
   limiterGr:    0,
   limiterEnabled:   true,
-  limiterThreshold: -3,
+  limiterInputGain: 0,
   setLimiterEnabled:   (v) => { set({ limiterEnabled: v });   sendEngineCommand({ cmd: 'set_limiter_enabled',   value: v }) },
-  setLimiterThreshold: (db) => { set({ limiterThreshold: db }); sendEngineCommand({ cmd: 'set_limiter_threshold', value: db }) },
+  setLimiterInputGain: (db) => { set({ limiterInputGain: db }); sendEngineCommand({ cmd: 'set_limiter_input_gain', value: db }) },
   muted:       false,
   toggleMute: () => {
     const next = !get().muted
@@ -632,7 +632,7 @@ export const useStore = create<AppState>((set, get) => ({
       favoriteIds:      new Set<string>((r as Record<string, unknown>)['favoriteIds'] as string[] ?? []),
       routing:          { ...get().routing, ...(r.routing ?? {}) },
       limiterEnabled:   (r as Record<string, unknown>)['limiterEnabled']   as boolean ?? get().limiterEnabled,
-      limiterThreshold: (r as Record<string, unknown>)['limiterThreshold'] as number  ?? get().limiterThreshold,
+      limiterInputGain: (r as Record<string, unknown>)['limiterInputGain'] as number  ?? get().limiterInputGain,
       activePresetId:   r.activePresetId ?? null,
       pendingRestore:   !!r.activePresetId,
     })

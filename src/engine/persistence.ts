@@ -28,7 +28,7 @@ function snapshot() {
     routing:           s.routing,
     activePresetId:    s.activePresetId,
     limiterEnabled:    s.limiterEnabled,
-    limiterThreshold:  s.limiterThreshold,
+    limiterInputGain:  s.limiterInputGain,
   }
 }
 
@@ -97,9 +97,9 @@ export function restoreEngineState() {
     setRouting({ virtualOutputId: String(r['virtualOutputId']) })
 
   // Limiter settings are in the snapshot too — push them to the engine
-  const { limiterEnabled, limiterThreshold, setLimiterEnabled, setLimiterThreshold } = useStore.getState()
+  const { limiterEnabled, limiterInputGain, setLimiterEnabled, setLimiterInputGain } = useStore.getState()
   setLimiterEnabled(limiterEnabled)
-  setLimiterThreshold(limiterThreshold)
+  setLimiterInputGain(limiterInputGain)
 
   savedRouting = null  // only restore once
 }

@@ -644,20 +644,20 @@ function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOut
           LIMIT
         </button>
 
-        {/* Threshold slider */}
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0 }}>THR</span>
+        {/* Ceiling slider — max is always -1 dBFS, output can never exceed that */}
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0 }}>CEIL</span>
         <input
-          type="range" min={-24} max={0} step={0.5}
-          value={limiterThreshold}
+          type="range" min={-24} max={-1} step={0.5}
+          value={Math.min(limiterThreshold, -1)}
           disabled={!limiterEnabled}
           onChange={e => setLimiterThreshold(parseFloat(e.target.value))}
           onClick={e => { if (e.ctrlKey) setLimiterThreshold(-3) }}
           onDragStart={e => e.preventDefault()}
           style={{ width: 80, flexShrink: 0, opacity: limiterEnabled ? 1 : 0.4, accentColor: 'var(--accent)', cursor: limiterEnabled ? 'pointer' : 'default' }}
-          title={`Threshold: ${limiterThreshold} dBFS  ·  Ctrl+click to reset to −3`}
+          title={`Ceiling: ${limiterThreshold} dBFS  ·  Hard wall at −1 dBFS  ·  Ctrl+click to reset to −3`}
         />
         <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text-secondary)', width: 32, textAlign: 'right', flexShrink: 0 }}>
-          {limiterThreshold > 0 ? '+' : ''}{limiterThreshold.toFixed(1)}
+          {limiterThreshold.toFixed(1)}
         </span>
 
         <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>GR</span>

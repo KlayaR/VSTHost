@@ -11,7 +11,13 @@ struct OutputLimiter
 {
     // ── Controls (atomics — safe to write from any thread) ────────────────────
     std::atomic<bool>  enabled     { true };
-    std::atomic<float> thresholdDb { -3.0f };  // default: 3 dB of headroom
+    std::atomic<float> thresholdDb { -3.0f };  // ceiling/threshold (≤ -1 dBFS)
+
+    // Absolute hard ceiling — applied after envelope limiting as a true
+    // brick wall so the output can NEVER exceed this, even if the envelope
+    // follower's 0.1 ms attack lets the very first sample of a transient
+    // through slightly hot.
+    static constexpr float hardCeilingDb = -1.0f;
 
     // ── Metering: 0 = no reduction, 1 = fully limited ────────────────────────
     std::atomic<float> grSmoothed  { 0.0f };
@@ -35,7 +41,10 @@ struct OutputLimiter
     {
         if (!enabled.load()) { grSmoothed.store(0.0f); return; }
 
-        const float thresh = juce::Decibels::decibelsToGain(thresholdDb.load());
+        // Ceiling from user control, clamped to never exceed the hard ceiling
+        const float userCeil  = juce::jmin(juce::Decibels::decibelsToGain(thresholdDb.load()),
+                                            juce::Decibels::decibelsToGain(hardCeilingDb));
+        const float thresh = userCeil;
         const int   nc     = buffer.getNumChannels();
         const int   ns     = buffer.getNumSamples();
         float       ge     = gainEnv;
@@ -64,6 +73,22 @@ struct OutputLimiter
         }
 
         gainEnv = ge;
+
+        // ── Hard brick wall at -1 dBFS ────────────────────────────────────────
+        // The envelope follower above is smooth but can let a single-sample
+        // overshoot through on extremely fast transients. This final clamp is a
+        // true sample-accurate ceiling — the output will NEVER exceed -1 dBFS.
+        // Because the envelope already did the heavy lifting the clamp almost
+        // never fires; when it does the signal is so close to threshold that the
+        // hard-clip distortion is imperceptible.
+        const float hardCeil = juce::Decibels::decibelsToGain(hardCeilingDb);
+        for (int ch = 0; ch < nc; ++ch)
+        {
+            auto* data = buffer.getWritePointer(ch);
+            for (int s = 0; s < ns; ++s)
+                data[s] = juce::jlimit(-hardCeil, hardCeil, data[s]);
+        }
+
         // GR amount 0..1 (positive = reducing)
         grSmoothed.store(1.0f - ge);
     }

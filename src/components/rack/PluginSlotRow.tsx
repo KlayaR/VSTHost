@@ -60,9 +60,11 @@ function SlotMeter({ index, active }: { index: number; active: boolean }) {
         </div>
         <span style={{
           fontSize: 9, fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0,
-          color: grDb > 0.3 ? 'rgba(255,140,50,1)' : 'var(--text-muted)',
+          color: 'rgba(255,140,50,1)',
+          // visibility:hidden keeps the space reserved — prevents layout shift
+          visibility: grDb > 0.3 ? 'visible' : 'hidden',
         }}>
-          {grDb > 0.3 ? `−${grDb.toFixed(1)}` : ''}
+          −{grDb.toFixed(1)}
         </span>
       </div>
     </div>

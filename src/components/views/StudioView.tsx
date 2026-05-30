@@ -619,8 +619,12 @@ function OutputMeterSection() {
             <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${grPct}%`, background: 'rgba(255,130,40,0.82)', transition: 'width 0.05s' }} />
           )}
         </div>
-        <span style={{ fontSize: 9, fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0, color: grDb > 0.3 ? 'rgba(255,140,50,1)' : 'var(--text-muted)' }}>
-          {grDb > 0.3 ? `−${grDb.toFixed(1)}` : ''}
+        <span style={{
+          fontSize: 9, fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0,
+          color: 'rgba(255,140,50,1)',
+          visibility: grDb > 0.3 ? 'visible' : 'hidden',
+        }}>
+          −{grDb.toFixed(1)}
         </span>
       </div>
     </div>

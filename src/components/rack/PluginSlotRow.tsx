@@ -7,25 +7,51 @@ interface Props {
   slot: PluginSlot
   index: number
   globalBypass: boolean
+  onHandleMouseDown?: () => void
 }
 
-// Isolated per-slot output meter — subscribes only to its own level so the
-// 30fps updates don't re-render the whole slot row.
+// Isolated per-slot meter — subscribes only to its own levels so 30fps
+// updates don't re-render the whole row.
+// Shows output level (green) + gain reduction overlay (orange) when the
+// plugin is attenuating the signal.
 function SlotMeter({ index, active }: { index: number; active: boolean }) {
-  const level = useStore(s => s.slotLevels[index] ?? 0)
+  const outLevel = useStore(s => s.slotLevels[index]   ?? 0)
+  const inLevel  = useStore(s => s.slotInLevels[index] ?? 0)
+
+  // Gain reduction: how much quieter the output is vs the input (0..1 linear).
+  // Only meaningful when the plugin is actively processing (enabled & not bypassed).
+  const gr = active && inLevel > 0.01 ? Math.max(0, Math.min(1, (inLevel - outLevel) / inLevel)) : 0
+
+  const outColor = !active ? 'var(--text-muted)' : outLevel > 0.9 ? 'var(--red)' : outLevel > 0.7 ? 'var(--yellow)' : 'var(--green)'
+
   return (
-    <div style={{ width: 44, height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }} title="Output level">
+    <div
+      style={{ flex: '1 1 60px', minWidth: 40, maxWidth: 120, height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}
+      title={gr > 0.02 ? `Output: ${(outLevel * 100).toFixed(0)}%  ·  GR: −${(gr * 100).toFixed(0)}%` : `Output: ${(outLevel * 100).toFixed(0)}%`}
+    >
+      {/* Output level */}
       <div style={{
-        height: '100%',
-        width: `${Math.min(1, level) * 100}%`,
-        background: active ? (level > 0.9 ? 'var(--red)' : level > 0.7 ? 'var(--yellow)' : 'var(--green)') : 'var(--text-muted)',
+        position: 'absolute', top: 0, left: 0, bottom: 0,
+        width: `${Math.min(1, outLevel) * 100}%`,
+        background: outColor,
         transition: 'width 0.05s',
+        borderRadius: 3,
       }} />
+      {/* Gain reduction overlay — fills the gap between output and input */}
+      {gr > 0.02 && (
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left:  `${Math.min(1, outLevel) * 100}%`,
+          width: `${gr * Math.min(1, inLevel) * 100}%`,
+          background: 'rgba(255,160,60,0.55)',
+          transition: 'left 0.05s, width 0.05s',
+        }} />
+      )}
     </div>
   )
 }
 
-export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
+export default function PluginSlotRow({ slot, index, globalBypass, onHandleMouseDown }: Props) {
   const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor, setSlotGain, copySlotSettings, pasteSlotSettings, pluginClipboard } = useStore()
   const { plugin, enabled, bypassed, expanded, gainDb = 0 } = slot
   const canPaste = pluginClipboard?.uid === plugin.uid
@@ -44,8 +70,13 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
     }}>
       {/* Header row */}
       <div style={{ height: 44, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
-        {/* Drag handle */}
-        <div className="drag-handle" style={{ padding: '0 2px', flexShrink: 0 }}>
+        {/* Drag handle — only this element initiates slot reordering */}
+        <div
+          className="drag-handle"
+          style={{ padding: '0 2px', flexShrink: 0, cursor: 'grab' }}
+          onMouseDown={() => onHandleMouseDown?.()}
+          onMouseUp={() => { /* handled by parent dragEnd */ }}
+        >
           <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">
             <circle cx="2" cy="3" r="1.5" /><circle cx="6" cy="3" r="1.5" />
             <circle cx="2" cy="7" r="1.5" /><circle cx="6" cy="7" r="1.5" />
@@ -86,10 +117,8 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
         {/* Per-slot gain trim — stopPropagation prevents the slot's draggable from
             hijacking the slider interaction; Ctrl+Click resets to 0 dB (DAW standard) */}
         <div
-          style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 80px', minWidth: 60, maxWidth: 140 }}
           title={`Slot gain: ${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB  ·  Ctrl+click to reset`}
-          onMouseDown={e => e.stopPropagation()}
-          onPointerDown={e => e.stopPropagation()}
         >
           <input
             type="range" min={-24} max={24} step={0.5}
@@ -97,7 +126,7 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
             onChange={e => setSlotGain(slot.id, parseFloat(e.target.value))}
             onClick={e => { if (e.ctrlKey) setSlotGain(slot.id, 0) }}
             onDragStart={e => e.preventDefault()}
-            style={{ width: 52, accentColor: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--accent)', cursor: 'pointer' }}
+            style={{ flex: '1 1 52px', minWidth: 40, maxWidth: 100, accentColor: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--accent)', cursor: 'pointer' }}
           />
           <span style={{ fontSize: 9.5, color: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--text-muted)', fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0 }}>
             {gainDb >= 0 ? '+' : ''}{gainDb.toFixed(1)}

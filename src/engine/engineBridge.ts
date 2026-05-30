@@ -95,10 +95,11 @@ function handleEngineEvent(event: unknown) {
 
     case 'levels': {
       store.setLevels(
-        (e['input'] as number) ?? 0,
-        (e['output'] as number) ?? 0,
-        (e['cpu'] as number) ?? 0,
-        (e['slots'] as number[]) ?? [],
+        (e['input']   as number)   ?? 0,
+        (e['output']  as number)   ?? 0,
+        (e['cpu']     as number)   ?? 0,
+        (e['slots']   as number[]) ?? [],
+        (e['slotsIn'] as number[]) ?? [],
       )
       break
     }

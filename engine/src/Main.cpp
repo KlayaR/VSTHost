@@ -30,10 +30,12 @@ public:
         obj->setProperty("input",  engine.getInputLevel());
         obj->setProperty("output", engine.getOutputLevel());
         obj->setProperty("cpu",    engine.getCpuUsage());
-        // Per-slot output levels for the chain meters
-        juce::Array<juce::var> sl;
-        for (float l : engine.chain().getSlotLevels()) sl.add(l);
-        obj->setProperty("slots", sl);
+        // Per-slot output and input levels for the chain meters (gain reduction)
+        juce::Array<juce::var> sl, slIn;
+        for (float l : engine.chain().getSlotLevels())   sl  .add(l);
+        for (float l : engine.chain().getSlotInLevels()) slIn.add(l);
+        obj->setProperty("slots",   sl);
+        obj->setProperty("slotsIn", slIn);
         ipc.sendEvent(obj);
 
         // Notify the UI once when plugin parameters change (incl. from editors).

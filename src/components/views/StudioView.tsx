@@ -165,6 +165,9 @@ function RackPanel() {
 
   const [dragIdx, setDragIdx] = useState<number | null>(null)   // reorder source
   const [insertAt, setInsertAt] = useState<number | null>(null) // plugin-add insertion point
+  // Only allow slot-reorder drag when it originates from the drag handle,
+  // not from sliders, buttons, or other interactive children.
+  const dragFromHandle = React.useRef(false)
 
   // Compute insertion index from cursor position over a slot (top/bottom half)
   const overSlot = (e: React.DragEvent, i: number) => {
@@ -304,17 +307,20 @@ function RackPanel() {
               <React.Fragment key={slot.id}>
                 <div
                   draggable
-                  onDragStart={e => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
+                  onDragStart={e => {
+                    if (!dragFromHandle.current) { e.preventDefault(); return }
+                    setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i))
+                  }}
                   onDragOver={e => overSlot(e, i)}
                   onDrop={e => {
                     e.preventDefault()
                     if (!draggedPlugin && dragIdx !== null && dragIdx !== i) reorderSlots(dragIdx, i)
                     setDragIdx(null)
                   }}
-                  onDragEnd={() => { setDragIdx(null); setInsertAt(null) }}
+                  onDragEnd={() => { setDragIdx(null); setInsertAt(null); dragFromHandle.current = false }}
                   style={{ opacity: dragIdx === i ? 0.4 : 1, borderRadius: 8, transition: 'opacity 0.1s' }}
                 >
-                  <PluginSlotRow slot={slot} index={i} globalBypass={bypassAll} />
+                  <PluginSlotRow slot={slot} index={i} globalBypass={bypassAll} onHandleMouseDown={() => { dragFromHandle.current = true }} />
                 </div>
                 {draggedPlugin !== null
                   ? <InsertLine show={insertAt === i + 1} />

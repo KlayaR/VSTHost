@@ -30,12 +30,9 @@ public:
         obj->setProperty("input",  engine.getInputLevel());
         obj->setProperty("output", engine.getOutputLevel());
         obj->setProperty("cpu",    engine.getCpuUsage());
-        // Per-slot output levels + per-block gain-reduction values
-        juce::Array<juce::var> sl, slGr;
-        for (float l : engine.chain().getSlotLevels())   sl  .add(l);
-        for (float l : engine.chain().getSlotGrLevels()) slGr.add(l);
-        obj->setProperty("slots",   sl);
-        obj->setProperty("slotsGr", slGr);
+        juce::Array<juce::var> sl;
+        for (float l : engine.chain().getSlotLevels()) sl.add(l);
+        obj->setProperty("slots", sl);
         obj->setProperty("limiterGr", engine.getLimiterGr());
         ipc.sendEvent(obj);
 

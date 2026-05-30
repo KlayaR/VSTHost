@@ -17,55 +17,20 @@ interface Props {
 // Top row  : output level, left → right (green/yellow/red)
 // Bottom row: gain reduction, right → left (orange) + dB value
 //             Filling from the right reads visually as "compression squeezing in"
+// Single output-level bar. We don't show per-plugin GR here because VST3
+// has no standard way to read a plugin's internal gain reduction — anything
+// we compute externally (input vs output comparison) is unreliable for
+// compressors with makeup gain. The output limiter GR is accurate because
+// we control that processing ourselves.
 function SlotMeter({ index, active }: { index: number; active: boolean }) {
-  const outLevel = useStore(s => s.slotLevels[index]   ?? 0)
-  // grLin is computed per-block in the engine (fast attack / slow release),
-  // so it reacts quickly to compression and doesn't suffer from independent-
-  // smoothing lag. 0 = no reduction, 1 = fully compressed.
-  const grLin    = useStore(s => s.slotGrLevels[index] ?? 0)
-
-  const grDb  = active && grLin > 0.005 ? -20 * Math.log10(Math.max(1e-6, 1 - grLin)) : 0
-  // Bar width calibrated against 24 dB max
-  const grPct = Math.min(100, (grDb / 24) * 100)
-
-  const outColor = !active ? 'var(--text-muted)'
-    : outLevel > 0.9 ? 'var(--red)'
-    : outLevel > 0.7 ? 'var(--yellow)'
+  const level = useStore(s => s.slotLevels[index] ?? 0)
+  const color = !active ? 'var(--text-muted)'
+    : level > 0.9 ? 'var(--red)'
+    : level > 0.7 ? 'var(--yellow)'
     : 'var(--green)'
-
   return (
-    <div style={{ flex: '1 1 80px', minWidth: 60, maxWidth: 200, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3 }}>
-
-      {/* Level: left → right */}
-      <div style={{ height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
-        <div style={{
-          position: 'absolute', top: 0, left: 0, bottom: 0,
-          width: `${Math.min(100, outLevel * 100)}%`,
-          background: outColor, borderRadius: 3, transition: 'width 0.05s',
-        }} />
-      </div>
-
-      {/* GR: right → left + dB value */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <div style={{ flex: 1, height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
-          {grPct > 0.5 && (
-            <div style={{
-              position: 'absolute', top: 0, right: 0, bottom: 0,
-              width: `${grPct}%`,
-              background: 'rgba(255, 130, 40, 0.82)',
-              transition: 'width 0.05s',
-            }} />
-          )}
-        </div>
-        <span style={{
-          fontSize: 9, fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0,
-          color: 'rgba(255,140,50,1)',
-          // visibility:hidden keeps the space reserved — prevents layout shift
-          visibility: grDb > 0.3 ? 'visible' : 'hidden',
-        }}>
-          −{grDb.toFixed(1)}
-        </span>
-      </div>
+    <div style={{ flex: '1 1 80px', minWidth: 60, maxWidth: 200, height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${Math.min(100, level * 100)}%`, background: color, borderRadius: 3, transition: 'width 0.05s' }} />
     </div>
   )
 }

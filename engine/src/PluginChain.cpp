@@ -30,17 +30,10 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
     {
         if (!slot || !slot->instance || !slot->enabled || slot->bypassed)
         {
-            // Bypassed/disabled: pass level through, report zero GR
             const float mag = buffer.getMagnitude(0, buffer.getNumSamples());
-            if (slot) {
-                slot->level  .store(slot->level  .load() * 0.8f + mag * 0.2f);
-                slot->grLevel.store(slot->grLevel.load() * 0.88f);  // GR decays to 0
-            }
+            if (slot) slot->level.store(slot->level.load() * 0.8f + mag * 0.2f);
             continue;
         }
-
-        // Measure peak BEFORE the plugin runs
-        const float preMag = buffer.getMagnitude(0, buffer.getNumSamples());
 
         auto& proc = *slot->instance;
         const int plugIns  = proc.getTotalNumInputChannels();
@@ -70,28 +63,8 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
         const float g = slot->gainLin.load();
         if (std::abs(g - 1.0f) > 0.001f) buffer.applyGain(g);
 
-        // Measure peak AFTER the plugin (and slot gain) ran
-        const float postMag = buffer.getMagnitude(0, buffer.getNumSamples());
-
         // Slot output level
-        slot->level.store(slot->level.load() * 0.8f + postMag * 0.2f);
-
-        // ── Gain reduction: compare per-block peaks directly ─────────────────
-        // Computing GR from two independently-smoothed values causes lag error
-        // (both chase the signal at their own rate). Instead: compute the
-        // instantaneous ratio this block, THEN smooth the result.
-        //   • Only measure when signal is present (avoids noise-floor artefacts)
-        //   • Fast attack (compression engaging) / slow release (meter lingers)
-        //   • NOTE: plugins with internal makeup gain will show net GR only —
-        //     we cannot see inside a plugin's processing; this is a physical
-        //     limit, not a bug.
-        float grInst = 0.0f;
-        if (preMag > 5e-4f)
-            grInst = juce::jmax(0.0f, 1.0f - juce::jmin(1.0f, postMag / preMag));
-
-        const float grOld = slot->grLevel.load();
-        const float coeff  = grInst >= grOld ? 0.15f : 0.88f;  // fast attack, slow release
-        slot->grLevel.store(grOld * coeff + grInst * (1.0f - coeff));
+        slot->level.store(slot->level.load() * 0.8f + buffer.getMagnitude(0, buffer.getNumSamples()) * 0.2f);
     }
 }
 
@@ -178,15 +151,6 @@ std::vector<float> PluginChain::getSlotLevels() const
     return out;
 }
 
-std::vector<float> PluginChain::getSlotGrLevels() const
-{
-    juce::ScopedReadLock rl(chainLock);
-    std::vector<float> out;
-    out.reserve((size_t) slots.size());
-    for (const auto* s : slots)
-        out.push_back(s ? s->grLevel.load() : 0.0f);
-    return out;
-}
 
 void PluginChain::setParameter(int slotIdx, int paramIdx, float value)
 {

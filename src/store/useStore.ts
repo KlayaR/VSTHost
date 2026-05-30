@@ -78,7 +78,6 @@ interface AppState {
   outputLevel: number
   cpu: number
   slotLevels:   number[]
-  slotGrLevels: number[]
   limiterGr:    number   // 0 = no reduction, 1 = fully limited
   muted: boolean
   toggleMute: () => void
@@ -100,7 +99,7 @@ interface AppState {
   reorderSlots:       (from: number, to: number) => void
   updateParam:        (slotId: string, paramId: string, value: number) => void
   openEditor:         (id: string) => void
-  setLevels:          (input: number, output: number, cpu: number, slots: number[], slotsGr: number[], limiterGr: number) => void
+  setLevels:          (input: number, output: number, cpu: number, slots: number[], limiterGr: number) => void
 
   // Limiter
   limiterEnabled:   boolean
@@ -219,7 +218,6 @@ export const useStore = create<AppState>((set, get) => ({
   outputLevel: 0,
   cpu:         0,
   slotLevels:   [],
-  slotGrLevels: [],
   limiterGr:    0,
   limiterEnabled:   true,
   limiterInputGain: 0,
@@ -336,7 +334,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (idx >= 0) sendEngineCommand({ cmd: 'open_editor', index: idx })
   },
 
-  setLevels: (input, output, cpu, slots, slotsGr, limiterGr) => set({ inputLevel: input, outputLevel: output, cpu, slotLevels: slots, slotGrLevels: slotsGr, limiterGr }),
+  setLevels: (input, output, cpu, slots, limiterGr) => set({ inputLevel: input, outputLevel: output, cpu, slotLevels: slots, limiterGr }),
 
   setChainFromEngine: (raw) => {
     const slots = (raw as Record<string, unknown>[]).map(rawToSlot)

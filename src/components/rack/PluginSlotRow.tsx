@@ -74,13 +74,20 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
 
         <SlotMeter index={index} active={!inactive} />
 
-        {/* Per-slot gain trim */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} title={`Slot gain: ${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB`}>
+        {/* Per-slot gain trim — stopPropagation prevents the slot's draggable from
+            hijacking the slider interaction; Ctrl+Click resets to 0 dB (DAW standard) */}
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          title={`Slot gain: ${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB  ·  Ctrl+click to reset`}
+          onMouseDown={e => e.stopPropagation()}
+          onPointerDown={e => e.stopPropagation()}
+        >
           <input
             type="range" min={-24} max={24} step={0.5}
             value={gainDb}
             onChange={e => setSlotGain(slot.id, parseFloat(e.target.value))}
-            onDoubleClick={() => setSlotGain(slot.id, 0)}
+            onClick={e => { if (e.ctrlKey) setSlotGain(slot.id, 0) }}
+            onDragStart={e => e.preventDefault()}
             style={{ width: 52, accentColor: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--accent)', cursor: 'pointer' }}
           />
           <span style={{ fontSize: 9.5, color: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--text-muted)', fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0 }}>

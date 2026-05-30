@@ -30,12 +30,12 @@ public:
         obj->setProperty("input",  engine.getInputLevel());
         obj->setProperty("output", engine.getOutputLevel());
         obj->setProperty("cpu",    engine.getCpuUsage());
-        // Per-slot output and input levels for the chain meters (gain reduction)
-        juce::Array<juce::var> sl, slIn;
+        // Per-slot output levels + per-block gain-reduction values
+        juce::Array<juce::var> sl, slGr;
         for (float l : engine.chain().getSlotLevels())   sl  .add(l);
-        for (float l : engine.chain().getSlotInLevels()) slIn.add(l);
-        obj->setProperty("slots",     sl);
-        obj->setProperty("slotsIn",  slIn);
+        for (float l : engine.chain().getSlotGrLevels()) slGr.add(l);
+        obj->setProperty("slots",   sl);
+        obj->setProperty("slotsGr", slGr);
         obj->setProperty("limiterGr", engine.getLimiterGr());
         ipc.sendEvent(obj);
 

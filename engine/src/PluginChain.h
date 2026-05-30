@@ -18,7 +18,7 @@ struct ChainSlot
     bool enabled  = true;
     bool bypassed = false;
     std::atomic<float> level    { 0.0f };   // output level for the slot meter
-    std::atomic<float> inLevel  { 0.0f };  // input level before this slot (for gain reduction)
+    std::atomic<float> grLevel  { 0.0f };  // gain reduction 0..1 (computed per-block)
     std::atomic<float> gainLin  { 1.0f };  // per-slot post-plugin gain (linear)
     std::unique_ptr<ParamListener> listener;
 
@@ -52,9 +52,9 @@ public:
     int              numPlugins()         const;
     const ChainSlot* getSlot(int index)   const;
 
-    // Per-slot output levels (0..1) and input levels, for the chain meters
-    std::vector<float> getSlotLevels()   const;
-    std::vector<float> getSlotInLevels() const;
+    // Per-slot output levels and gain-reduction values for the chain meters
+    std::vector<float> getSlotLevels()  const;
+    std::vector<float> getSlotGrLevels() const;
 
     // Bypass entire chain
     void setBypassAll(bool v)  { bypassAll.store(v); }

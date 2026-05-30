@@ -99,7 +99,7 @@ function handleEngineEvent(event: unknown) {
         (e['output']    as number)   ?? 0,
         (e['cpu']       as number)   ?? 0,
         (e['slots']     as number[]) ?? [],
-        (e['slotsIn']   as number[]) ?? [],
+        (e['slotsGr']   as number[]) ?? [],
         (e['limiterGr'] as number)   ?? 0,
       )
       break

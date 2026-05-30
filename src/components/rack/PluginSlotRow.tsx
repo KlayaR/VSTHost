@@ -19,14 +19,13 @@ interface Props {
 //             Filling from the right reads visually as "compression squeezing in"
 function SlotMeter({ index, active }: { index: number; active: boolean }) {
   const outLevel = useStore(s => s.slotLevels[index]   ?? 0)
-  const inLevel  = useStore(s => s.slotInLevels[index] ?? 0)
+  // grLin is computed per-block in the engine (fast attack / slow release),
+  // so it reacts quickly to compression and doesn't suffer from independent-
+  // smoothing lag. 0 = no reduction, 1 = fully compressed.
+  const grLin    = useStore(s => s.slotGrLevels[index] ?? 0)
 
-  // Proportional GR (0..1) then convert to dB for the number + calibrated bar
-  const grLin = active && inLevel > 0.01
-    ? Math.max(0, Math.min(1, (inLevel - outLevel) / inLevel))
-    : 0
-  const grDb  = grLin > 0.005 ? -20 * Math.log10(Math.max(1e-6, 1 - grLin)) : 0
-  // Bar width calibrated against 24 dB max so it feels consistent regardless of signal level
+  const grDb  = active && grLin > 0.005 ? -20 * Math.log10(Math.max(1e-6, 1 - grLin)) : 0
+  // Bar width calibrated against 24 dB max
   const grPct = Math.min(100, (grDb / 24) * 100)
 
   const outColor = !active ? 'var(--text-muted)'

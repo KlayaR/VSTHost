@@ -34,8 +34,9 @@ public:
         juce::Array<juce::var> sl, slIn;
         for (float l : engine.chain().getSlotLevels())   sl  .add(l);
         for (float l : engine.chain().getSlotInLevels()) slIn.add(l);
-        obj->setProperty("slots",   sl);
-        obj->setProperty("slotsIn", slIn);
+        obj->setProperty("slots",     sl);
+        obj->setProperty("slotsIn",  slIn);
+        obj->setProperty("limiterGr", engine.getLimiterGr());
         ipc.sendEvent(obj);
 
         // Notify the UI once when plugin parameters change (incl. from editors).
@@ -524,6 +525,14 @@ private:
         else if (type == "set_monitor_muted")
         {
             engine->setMonitorMuted((bool)cmd["value"]);
+        }
+        else if (type == "set_limiter_enabled")
+        {
+            engine->setLimiterEnabled((bool)cmd["value"]);
+        }
+        else if (type == "set_limiter_threshold")
+        {
+            engine->setLimiterThreshold((float)cmd["value"]);
         }
         else if (type == "set_virtual_output")
         {

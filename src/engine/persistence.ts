@@ -17,16 +17,18 @@ function inTauri(): boolean {
 function snapshot() {
   const s = useStore.getState()
   return {
-    theme:            s.theme,
-    startWithWindows: s.startWithWindows,
-    startMinimized:   s.startMinimized,
-    closeToTray:      s.closeToTray,
-    autoBypass:       s.autoBypass,
-    scanPaths:        s.scanPaths,
-    availablePlugins: s.availablePlugins,
-    favoriteIds:      Array.from(s.favoriteIds),   // Set → array for JSON
-    routing:          s.routing,
-    activePresetId:   s.activePresetId,
+    theme:             s.theme,
+    startWithWindows:  s.startWithWindows,
+    startMinimized:    s.startMinimized,
+    closeToTray:       s.closeToTray,
+    autoBypass:        s.autoBypass,
+    scanPaths:         s.scanPaths,
+    availablePlugins:  s.availablePlugins,
+    favoriteIds:       Array.from(s.favoriteIds),   // Set → array for JSON
+    routing:           s.routing,
+    activePresetId:    s.activePresetId,
+    limiterEnabled:    s.limiterEnabled,
+    limiterThreshold:  s.limiterThreshold,
   }
 }
 
@@ -93,5 +95,11 @@ export function restoreEngineState() {
     setRouting({ outputChannel: r['outputChannel'] as number })
   if (r['virtualOutputId'])
     setRouting({ virtualOutputId: String(r['virtualOutputId']) })
+
+  // Limiter settings are in the snapshot too — push them to the engine
+  const { limiterEnabled, limiterThreshold, setLimiterEnabled, setLimiterThreshold } = useStore.getState()
+  setLimiterEnabled(limiterEnabled)
+  setLimiterThreshold(limiterThreshold)
+
   savedRouting = null  // only restore once
 }

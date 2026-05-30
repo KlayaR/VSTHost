@@ -336,6 +336,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     const int    bs = device->getCurrentBufferSizeSamples();
     processBuffer.setSize(2, bs);
     pluginChain.prepareToPlay(sr, bs);
+    limiter.prepare(sr);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -386,7 +387,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     // ── Apply output gain ─────────────────────────────────────────────────────
     processBuffer.applyGain(outputGain.load());
 
-    // ── Measure output level (post-gain, pre-mute) ────────────────────────────
+    // ── Output limiter (brick-wall, after gain, before meters + send) ─────────
+    limiter.process(processBuffer);
+
+    // ── Measure output level (post-limiter, pre-mute) ─────────────────────────
     const float outPeak = processBuffer.getMagnitude(0, numSamples);
     outputSmooth = outputSmooth * 0.92f + outPeak * 0.08f;
     outputLevel.store(outputSmooth);

@@ -79,6 +79,7 @@ interface AppState {
   cpu: number
   slotLevels:   number[]
   slotInLevels: number[]
+  limiterGr:    number   // 0 = no reduction, 1 = fully limited
   muted: boolean
   toggleMute: () => void
   monitorMuted: boolean
@@ -99,7 +100,13 @@ interface AppState {
   reorderSlots:       (from: number, to: number) => void
   updateParam:        (slotId: string, paramId: string, value: number) => void
   openEditor:         (id: string) => void
-  setLevels:          (input: number, output: number, cpu: number, slots: number[], slotsIn: number[]) => void
+  setLevels:          (input: number, output: number, cpu: number, slots: number[], slotsIn: number[], limiterGr: number) => void
+
+  // Limiter
+  limiterEnabled:   boolean
+  limiterThreshold: number    // dB
+  setLimiterEnabled:   (v: boolean) => void
+  setLimiterThreshold: (db: number) => void
   setChainFromEngine: (raw: unknown[]) => void
   pendingSaveName:    string | null
 
@@ -213,6 +220,11 @@ export const useStore = create<AppState>((set, get) => ({
   cpu:         0,
   slotLevels:   [],
   slotInLevels: [],
+  limiterGr:    0,
+  limiterEnabled:   true,
+  limiterThreshold: -3,
+  setLimiterEnabled:   (v) => { set({ limiterEnabled: v });   sendEngineCommand({ cmd: 'set_limiter_enabled',   value: v }) },
+  setLimiterThreshold: (db) => { set({ limiterThreshold: db }); sendEngineCommand({ cmd: 'set_limiter_threshold', value: db }) },
   muted:       false,
   toggleMute: () => {
     const next = !get().muted
@@ -324,7 +336,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (idx >= 0) sendEngineCommand({ cmd: 'open_editor', index: idx })
   },
 
-  setLevels: (input, output, cpu, slots, slotsIn) => set({ inputLevel: input, outputLevel: output, cpu, slotLevels: slots, slotInLevels: slotsIn }),
+  setLevels: (input, output, cpu, slots, slotsIn, limiterGr) => set({ inputLevel: input, outputLevel: output, cpu, slotLevels: slots, slotInLevels: slotsIn, limiterGr }),
 
   setChainFromEngine: (raw) => {
     const slots = (raw as Record<string, unknown>[]).map(rawToSlot)
@@ -619,6 +631,8 @@ export const useStore = create<AppState>((set, get) => ({
       availablePlugins: (r.availablePlugins as Plugin[]) ?? get().availablePlugins,
       favoriteIds:      new Set<string>((r as Record<string, unknown>)['favoriteIds'] as string[] ?? []),
       routing:          { ...get().routing, ...(r.routing ?? {}) },
+      limiterEnabled:   (r as Record<string, unknown>)['limiterEnabled']   as boolean ?? get().limiterEnabled,
+      limiterThreshold: (r as Record<string, unknown>)['limiterThreshold'] as number  ?? get().limiterThreshold,
       activePresetId:   r.activePresetId ?? null,
       pendingRestore:   !!r.activePresetId,
     })

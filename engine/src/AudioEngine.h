@@ -3,6 +3,72 @@
 #include "PluginChain.h"
 #include "PluginScanner.h"
 
+// ── Brick-wall peak limiter ───────────────────────────────────────────────────
+// Sits at the very end of the signal path (after plugin chain + output gain).
+// Designed for voice/comms: fast attack so peaks can't clip Discord's encoder,
+// smooth release so gain pumping is inaudible on speech.
+struct OutputLimiter
+{
+    // ── Controls (atomics — safe to write from any thread) ────────────────────
+    std::atomic<bool>  enabled     { true };
+    std::atomic<float> thresholdDb { -3.0f };  // default: 3 dB of headroom
+
+    // ── Metering: 0 = no reduction, 1 = fully limited ────────────────────────
+    std::atomic<float> grSmoothed  { 0.0f };
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    float gainEnv       { 1.0f };   // running gain envelope (linear)
+    float attackCoeff   { 0.0f };
+    float releaseCoeff  { 0.0f };
+
+    void prepare(double sampleRate)
+    {
+        // 0.1 ms attack  — catches peaks before they reach the encoder
+        attackCoeff  = std::exp(-1.0f / (float(sampleRate) * 0.0001f));
+        // 80 ms release  — natural, no audible pumping on voice
+        releaseCoeff = std::exp(-1.0f / (float(sampleRate) * 0.080f));
+        gainEnv      = 1.0f;
+        grSmoothed.store(0.0f);
+    }
+
+    void process(juce::AudioBuffer<float>& buffer)
+    {
+        if (!enabled.load()) { grSmoothed.store(0.0f); return; }
+
+        const float thresh = juce::Decibels::decibelsToGain(thresholdDb.load());
+        const int   nc     = buffer.getNumChannels();
+        const int   ns     = buffer.getNumSamples();
+        float       ge     = gainEnv;
+
+        for (int s = 0; s < ns; ++s)
+        {
+            // True peak across all channels
+            float peak = 0.0f;
+            for (int ch = 0; ch < nc; ++ch)
+                peak = juce::jmax(peak, std::abs(buffer.getSample(ch, s)));
+
+            // Desired gain: clamp to threshold
+            float desired = (peak > thresh && peak > 1e-6f)
+                          ? thresh / peak
+                          : 1.0f;
+            desired = juce::jmin(desired, 1.0f);
+
+            // Attack when gain drops, release when it recovers
+            ge = desired < ge
+               ? ge * attackCoeff  + desired * (1.0f - attackCoeff)   // fast attack
+               : ge * releaseCoeff + desired * (1.0f - releaseCoeff);  // slow release
+            ge = juce::jmin(ge, 1.0f);
+
+            for (int ch = 0; ch < nc; ++ch)
+                buffer.setSample(ch, s, buffer.getSample(ch, s) * ge);
+        }
+
+        gainEnv = ge;
+        // GR amount 0..1 (positive = reducing)
+        grSmoothed.store(1.0f - ge);
+    }
+};
+
 class AudioEngine : public juce::AudioIODeviceCallback
 {
 public:
@@ -38,6 +104,13 @@ public:
     // ── Levels (safe to call from any thread) ────────────────────────────────
     float getInputLevel()  const { return inputLevel.load();  }
     float getOutputLevel() const { return outputLevel.load(); }
+    float getLimiterGr()   const { return limiter.grSmoothed.load(); }
+
+    // ── Output limiter controls ───────────────────────────────────────────────
+    void setLimiterEnabled  (bool  v)  { limiter.enabled.store(v); }
+    void setLimiterThreshold(float db) { limiter.thresholdDb.store(db); }
+    bool  getLimiterEnabled()   const  { return limiter.enabled.load(); }
+    float getLimiterThreshold() const  { return limiter.thresholdDb.load(); }
 
     // ── Parameter-change dirty flag (set when any plugin param changes) ───────
     bool consumeParamDirty() { return paramDirty.exchange(false); }
@@ -108,6 +181,7 @@ private:
     std::atomic<bool>  monitorMuted{ false };
     float inputSmooth  = 0.0f;
     float outputSmooth = 0.0f;
+    OutputLimiter limiter;
 
     juce::AudioBuffer<float> processBuffer;
     juce::MidiBuffer         midiBuffer;

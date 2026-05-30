@@ -590,15 +590,79 @@ function InputBlock({ inputGain, setInputGain }: { inputGain: number; setInputGa
   )
 }
 
-function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOutputGain: (v: number) => void }) {
+// Isolated GR meter — subscribes to limiterGr at 30fps without re-rendering OutputBlock
+function LimiterGrMeter() {
+  const gr = useStore(s => s.limiterGr)
+  const pct = Math.min(1, gr) * 100
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 9 }}>
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}><circle cx="7" cy="7" r="5.5" stroke="var(--green)" strokeWidth="1.3" /><path d="M4.5 7l2 2 3-3" stroke="var(--green)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>Output</span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        To monitor / virtual cable
-      </span>
-      <CompactGain value={outputGain} onChange={setOutputGain} label="VOL" />
+    <div
+      style={{ width: 60, height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}
+      title={`Limiter gain reduction: ${(gr * 100).toFixed(0)}%`}
+    >
+      <div style={{
+        height: '100%', width: `${pct}%`,
+        background: pct > 60 ? 'var(--red)' : pct > 25 ? 'var(--yellow)' : 'var(--green)',
+        borderRadius: 3, transition: 'width 0.05s',
+      }} />
+    </div>
+  )
+}
+
+function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOutputGain: (v: number) => void }) {
+  const limiterEnabled   = useStore(s => s.limiterEnabled)
+  const limiterThreshold = useStore(s => s.limiterThreshold)
+  const setLimiterEnabled   = useStore(s => s.setLimiterEnabled)
+  const setLimiterThreshold = useStore(s => s.setLimiterThreshold)
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 7, padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Row 1: icon + label + VOL */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="7" cy="7" r="5.5" stroke="var(--green)" strokeWidth="1.3" />
+          <path d="M4.5 7l2 2 3-3" stroke="var(--green)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>Output</span>
+        <span style={{ flex: 1 }} />
+        <CompactGain value={outputGain} onChange={setOutputGain} label="VOL" />
+      </div>
+
+      {/* Row 2: Limiter controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 2 }}>
+        {/* Enable toggle */}
+        <button
+          onClick={() => setLimiterEnabled(!limiterEnabled)}
+          title={limiterEnabled ? 'Limiter active — click to disable' : 'Limiter disabled — click to enable'}
+          style={{
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+            padding: '2px 7px', borderRadius: 3, cursor: 'pointer', flexShrink: 0,
+            border: `1px solid ${limiterEnabled ? 'var(--accent)' : 'var(--border)'}`,
+            background: limiterEnabled ? 'rgba(91,140,255,0.14)' : 'transparent',
+            color: limiterEnabled ? 'var(--accent)' : 'var(--text-muted)',
+          }}
+        >
+          LIMIT
+        </button>
+
+        {/* Threshold slider */}
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em', flexShrink: 0 }}>THR</span>
+        <input
+          type="range" min={-24} max={0} step={0.5}
+          value={limiterThreshold}
+          disabled={!limiterEnabled}
+          onChange={e => setLimiterThreshold(parseFloat(e.target.value))}
+          onClick={e => { if (e.ctrlKey) setLimiterThreshold(-3) }}
+          onDragStart={e => e.preventDefault()}
+          style={{ width: 80, flexShrink: 0, opacity: limiterEnabled ? 1 : 0.4, accentColor: 'var(--accent)', cursor: limiterEnabled ? 'pointer' : 'default' }}
+          title={`Threshold: ${limiterThreshold} dBFS  ·  Ctrl+click to reset to −3`}
+        />
+        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--text-secondary)', width: 32, textAlign: 'right', flexShrink: 0 }}>
+          {limiterThreshold > 0 ? '+' : ''}{limiterThreshold.toFixed(1)}
+        </span>
+
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>GR</span>
+        <LimiterGrMeter />
+      </div>
     </div>
   )
 }

@@ -293,6 +293,57 @@ fn delete_preset(app: AppHandle, name: String) {
 }
 
 #[tauri::command]
+fn export_preset(app: AppHandle, name: String, dest_path: String) -> Result<(), String> {
+    let dir = presets_dir(&app).ok_or("no presets dir")?;
+    let src = dir.join(format!("{}.json", sanitize(&name)));
+    std::fs::copy(&src, &dest_path).map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_preset(app: AppHandle, src_path: String) -> Result<String, String> {
+    let text = std::fs::read_to_string(&src_path).map_err(|e| e.to_string())?;
+    let data: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let name = data.get("name").and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| std::path::Path::new(&src_path)
+            .file_stem().unwrap_or_default()
+            .to_string_lossy().to_string());
+    let dir = presets_dir(&app).ok_or("no presets dir")?;
+    // Avoid overwriting — append (2), (3)… if needed
+    let mut final_name = name.clone();
+    let mut n = 2;
+    while dir.join(format!("{}.json", sanitize(&final_name))).exists() {
+        final_name = format!("{} ({})", name, n);
+        n += 1;
+    }
+    let mut data_mut = data;
+    if let Some(obj) = data_mut.as_object_mut() {
+        obj.insert("name".into(), serde_json::Value::String(final_name.clone()));
+    }
+    let dest = dir.join(format!("{}.json", sanitize(&final_name)));
+    std::fs::write(dest, serde_json::to_string_pretty(&data_mut).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(final_name)
+}
+
+#[tauri::command]
+async fn check_update() -> Result<Option<String>, String> {
+    // Spawn a blocking task so we don't block the async executor
+    tokio::task::spawn_blocking(|| -> Result<Option<String>, String> {
+        let url = "https://api.github.com/repos/KlayaR/VSTHost/releases/latest";
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command",
+                &format!("(Invoke-RestMethod -Uri '{}' -UseBasicParsing).tag_name", url)])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let tag = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if tag.is_empty() || output.status.code() != Some(0) { return Ok(None); }
+        let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+        if tag != current { Ok(Some(tag)) } else { Ok(None) }
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn rename_preset(app: AppHandle, old_name: String, new_name: String) -> Result<(), String> {
     let dir = presets_dir(&app).ok_or("no presets dir")?;
     let old_path = dir.join(format!("{}.json", sanitize(&old_name)));
@@ -370,6 +421,9 @@ pub fn run() {
             load_preset,
             delete_preset,
             rename_preset,
+            export_preset,
+            import_preset,
+            check_update,
             set_autostart,
             load_state,
             save_state

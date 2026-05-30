@@ -640,6 +640,11 @@ private:
             engine->chain().setEnabled((int)cmd["index"], (bool)cmd["value"]);
             sendChain();
         }
+        else if (type == "set_plugin_state")
+        {
+            engine->chain().setPluginState((int)cmd["index"], cmd["state"].toString());
+            sendChain();   // so UI gets the fresh state blob back
+        }
         else if (type == "set_slot_gain")
         {
             engine->chain().setSlotGain((int)cmd["index"], (float)cmd["gainDb"]);

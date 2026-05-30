@@ -26,8 +26,9 @@ function SlotMeter({ index, active }: { index: number; active: boolean }) {
 }
 
 export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
-  const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor, setSlotGain } = useStore()
+  const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor, setSlotGain, copySlotSettings, pasteSlotSettings, pluginClipboard } = useStore()
   const { plugin, enabled, bypassed, expanded, gainDb = 0 } = slot
+  const canPaste = pluginClipboard?.uid === plugin.uid
   const inactive = !enabled || bypassed || globalBypass
   const accent = inactive ? 'var(--border)' : 'var(--accent)'
 
@@ -57,9 +58,17 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
           {String(index + 1).padStart(2, '0')}
         </span>
 
-        {/* Plugin name */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* Plugin name + info tooltip */}
+        <div
+          style={{ flex: 1, minWidth: 0 }}
+          title={[
+            plugin.name,
+            plugin.manufacturer,
+            plugin.category,
+            plugin.latency > 0 ? `Latency: ${((plugin.latency / 48000) * 1000).toFixed(1)}ms` : null,
+          ].filter(Boolean).join('  ·  ')}
+        >
+          <div style={{ fontSize: 12, fontWeight: 600, color: slot.loading ? 'var(--text-muted)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {plugin.name}
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -128,6 +137,20 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
               <path d="M3 5l3.5 3.5L10 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+          <button className="btn-icon" onClick={() => copySlotSettings(slot.id)} data-tip="Copy settings" style={{ color: 'var(--text-muted)' }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <rect x="3" y="3" width="8" height="8" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M1 7V1h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {canPaste && (
+            <button className="btn-icon" onClick={() => pasteSlotSettings(slot.id)} data-tip={`Paste settings from clipboard (${pluginClipboard?.name})`} style={{ color: 'var(--accent)' }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <rect x="1" y="2" width="8" height="9" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
+                <path d="M3.5 2V1h5v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
           <button className="btn-icon" onClick={() => removeSlot(slot.id)} data-tip="Remove" style={{ color: 'var(--text-muted)' }}>
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
               <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />

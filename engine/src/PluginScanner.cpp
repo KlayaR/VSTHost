@@ -158,8 +158,12 @@ void PluginScanner::clearBlacklist()
 // ─── ScanThread ───────────────────────────────────────────────────────────────
 void PluginScanner::ScanThread::run()
 {
-    owner.knownPlugins.clear();
-
+    // Incremental scan: keep the existing known-plugin list rather than
+    // clearing it. PluginDirectoryScanner calls isListingUpToDate() on each
+    // file and skips it when the cached entry's modification time still matches
+    // — so only new or changed files are re-probed. Deleted-file cleanup
+    // happens automatically because the scanner won't re-add missing files and
+    // we call removePluginFiles() at the end.
     juce::File deadMansPedal(PluginScanner::deadMansPedalFile());
 
     // If a previous scan died while probing a plugin, its path is still in the
@@ -199,6 +203,12 @@ void PluginScanner::ScanThread::run()
             }
         }
     }
+
+    // Remove cached entries for plugin files that no longer exist on disk,
+    // so stale plugins don't persist after being uninstalled.
+    for (const auto& desc : owner.knownPlugins.getTypes())
+        if (!juce::File(desc.fileOrIdentifier).existsAsFile())
+            owner.knownPlugins.removeType(desc);
 
     // Persist the freshly-scanned list so the next launch can load a preset
     // without re-enumerating plugin files (especially slow Waves shells).

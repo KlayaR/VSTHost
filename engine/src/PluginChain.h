@@ -61,6 +61,7 @@ public:
     // Parameter access (message thread)
     void  setParameter(int slotIndex, int paramIndex, float normalised);
     float getParameter(int slotIndex, int paramIndex) const;
+    void  setPluginState(int slotIndex, const juce::String& base64State);
 
     // Serialise the chain as a juce::var array
     juce::var toVar() const;

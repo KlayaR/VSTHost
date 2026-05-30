@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { useStore } from './store/useStore'
 import { initEngineBridge, destroyEngineBridge } from './engine/engineBridge'
 import { loadPersisted } from './engine/persistence'
+import { invoke } from '@tauri-apps/api/core'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import StudioView from './components/views/StudioView'
@@ -17,8 +18,10 @@ export default function App() {
   // tree re-renders on every 30fps level update.
   const activeSection   = useStore(s => s.activeSection)
   const theme           = useStore(s => s.theme)
-  const toggleBypassAll = useStore(s => s.toggleBypassAll)
-  const setShowSavePreset = useStore(s => s.setShowSavePreset)
+  const toggleBypassAll    = useStore(s => s.toggleBypassAll)
+  const setShowSavePreset  = useStore(s => s.setShowSavePreset)
+  const undo               = useStore(s => s.undo)
+  const setUpdateAvailable = useStore(s => s.setUpdateAvailable)
   const showSavePreset  = useStore(s => s.showSavePreset)
   const showShortcuts   = useStore(s => s.showShortcuts)
   const setShowShortcuts = useStore(s => s.setShowShortcuts)
@@ -31,6 +34,10 @@ export default function App() {
       await loadPersisted()
       await initEngineBridge()
       cleanup = destroyEngineBridge
+      // Check for updates in background — silently ignore any failures.
+      invoke<string | null>('check_update')
+        .then(v => { if (v) setUpdateAvailable(v) })
+        .catch(() => {})
     })()
     return () => cleanup()
   }, [])
@@ -38,6 +45,10 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault()
+        undo()
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         setShowSavePreset(true)
@@ -61,7 +72,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggleBypassAll, setShowSavePreset, setShowShortcuts])
+  }, [toggleBypassAll, setShowSavePreset, setShowShortcuts, undo])
 
   return (
     <div className={theme === 'light' ? 'theme-light' : ''} style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>

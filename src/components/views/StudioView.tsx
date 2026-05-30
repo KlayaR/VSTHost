@@ -1,4 +1,6 @@
 import React, { useState } from 'react'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
 import { useStore } from '../../store/useStore'
 import type { Plugin } from '../../types'
 import LevelMeter from '../LevelMeter'
@@ -158,6 +160,8 @@ function RackPanel() {
   const toggleMute      = useStore(s => s.toggleMute)
   const monitorMuted    = useStore(s => s.monitorMuted)
   const toggleMonitor   = useStore(s => s.toggleMonitor)
+  const undo            = useStore(s => s.undo)
+  const undoStack       = useStore(s => s.undoStack)
 
   const [dragIdx, setDragIdx] = useState<number | null>(null)   // reorder source
   const [insertAt, setInsertAt] = useState<number | null>(null) // plugin-add insertion point
@@ -191,6 +195,23 @@ function RackPanel() {
       <div style={{ height: 44, padding: '0 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-surface)', flexShrink: 0 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Signal Chain</span>
         <div style={{ flex: 1 }} />
+
+        {/* ── Undo ── */}
+        <button
+          className="btn btn-ghost"
+          onClick={undo}
+          disabled={undoStack.length === 0}
+          title={`Undo last chain change (Ctrl+Z)${undoStack.length > 0 ? ` · ${undoStack.length} step${undoStack.length > 1 ? 's' : ''} available` : ''}`}
+          style={{ fontSize: 11, opacity: undoStack.length === 0 ? 0.35 : 1 }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M1.5 4.5h5a3 3 0 010 6H4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M1.5 4.5L4 2M1.5 4.5L4 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Undo<kbd style={{ fontSize: 9, background: 'var(--bg-active)', padding: '0 4px', borderRadius: 2 }}>Ctrl+Z</kbd>
+        </button>
+
+        <ToolbarDivider />
 
         {/* ── Chain processing ── */}
         <button className="btn btn-ghost" onClick={toggleBypassAll} title="Bypass every plugin in the chain (signal passes through clean)" style={{ fontSize: 11, background: bypassAll ? 'rgba(245,200,66,0.2)' : undefined, color: bypassAll ? 'var(--yellow)' : undefined, borderColor: bypassAll ? 'var(--yellow)' : undefined }}>
@@ -331,6 +352,7 @@ function SidePanel() {
   const loadPreset        = useStore(s => s.loadPreset)
   const deletePreset      = useStore(s => s.deletePreset)
   const renamePreset      = useStore(s => s.renamePreset)
+  const refreshPresets    = useStore(s => s.refreshPresets)
   const updatePreset      = useStore(s => s.updatePreset)
   const presetModified    = useStore(s => s.presetModified)
   const availablePlugins  = useStore(s => s.availablePlugins)
@@ -394,6 +416,30 @@ function SidePanel() {
               <svg width="13" height="13" viewBox="0 0 11 13" fill="none"><path d="M1 3h9M4 3V2h3v1M2 3l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           )}
+          {activePresetId && (
+            <button className="btn-icon" data-tip="Export preset to file" style={{ flexShrink: 0 }} onClick={async () => {
+              const preset = presets.find(p => p.id === activePresetId)
+              if (!preset) return
+              const dest = await saveDialog({ defaultPath: `${preset.name}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] }).catch(() => null)
+              if (dest) invoke('export_preset', { name: preset.name, destPath: dest }).catch(e => useStore.getState().setEngineError(String(e)))
+            }}>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path d="M6.5 1v7M4 6l2.5 2.5L9 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M2 10h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
+          <button className="btn-icon" data-tip="Import preset from file" style={{ flexShrink: 0 }} onClick={async () => {
+            const src = await openDialog({ filters: [{ name: 'JSON', extensions: ['json'] }], multiple: false }).catch(() => null)
+            if (!src || typeof src !== 'string') return
+            const name = await invoke<string>('import_preset', { srcPath: src }).catch(e => { useStore.getState().setEngineError(String(e)); return null })
+            if (name) { refreshPresets(); useStore.getState().setEngineWarning(`Imported "${name}"`) }
+          }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M6.5 9V2M4 4.5L6.5 2 9 4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 10h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
         {renamingId && (
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>

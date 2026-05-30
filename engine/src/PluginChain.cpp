@@ -68,6 +68,15 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
     }
 }
 
+void PluginChain::setPluginState(int slotIndex, const juce::String& base64State)
+{
+    juce::ScopedReadLock rl(chainLock);
+    if (!juce::isPositiveAndBelow(slotIndex, slots.size())) return;
+    juce::MemoryBlock mb;
+    if (mb.fromBase64Encoding(base64State))
+        slots[slotIndex]->instance->setStateInformation(mb.getData(), (int)mb.getSize());
+}
+
 void PluginChain::setSlotGain(int index, float gainDb)
 {
     juce::ScopedReadLock rl(chainLock);

@@ -139,6 +139,20 @@ interface AppState {
   setRealChannels: (inputs: string[], outputs: string[]) => void
   setRealVirtualOutputs: (v: string[]) => void
 
+  // Undo stack (structural chain changes: add / remove / reorder)
+  undoStack: PluginSlot[][]
+  pushUndo: () => void
+  undo: () => void
+
+  // Plugin settings clipboard (copy/paste between slots of the same plugin)
+  pluginClipboard: { uid: string; name: string; state: string } | null
+  copySlotSettings: (id: string) => void
+  pasteSlotSettings: (id: string) => void
+
+  // Update banner
+  updateAvailable: string | null          // e.g. "v1.3.0"
+  setUpdateAvailable: (v: string | null) => void
+
   // Startup loading screen
   appLoading: boolean
   loadingPhase: string
@@ -250,13 +264,13 @@ export const useStore = create<AppState>((set, get) => ({
   removeSlot: (id) => {
     const idx = get().slots.findIndex(s => s.id === id)
     if (idx < 0) return
+    get().pushUndo()
     set(s => ({ slots: s.slots.filter(sl => sl.id !== id), presetModified: true }))
     sendEngineCommand({ cmd: 'remove_plugin', index: idx })
   },
 
   addPluginToSlot: (plugin, index) => {
-    // Identify by file + unique id (shells like Waves pack many in one file).
-    // Fall back to id-as-file for plugins persisted before uid existed.
+    get().pushUndo()
     const cmd: Record<string, unknown> = {
       cmd: 'add_plugin',
       file: plugin.file || plugin.id,
@@ -268,6 +282,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   reorderSlots: (from, to) => {
+    get().pushUndo()
     set(s => {
       const slots = [...s.slots]
       const [item] = slots.splice(from, 1)
@@ -433,6 +448,45 @@ export const useStore = create<AppState>((set, get) => ({
 
   setEnginePresets: () => { /* presets now come from Rust via refreshPresets() */ },
   pendingRestore: false,
+
+  // ── Undo stack ────────────────────────────────────────────────────────────────
+  undoStack: [],
+  pushUndo: () => {
+    const current = get().slots
+    if (!current.length) return
+    set(s => ({
+      undoStack: [...s.undoStack.slice(-9), current],  // keep last 10
+    }))
+  },
+  undo: () => {
+    const stack = get().undoStack
+    if (!stack.length) return
+    const prev = stack[stack.length - 1]
+    set({ undoStack: stack.slice(0, -1) })
+    set({ slots: prev, presetModified: true })
+    // Reload the chain from the snapshot so the engine matches the UI.
+    sendEngineCommand({ cmd: 'load_chain', chain: serializeChain(prev) })
+  },
+
+  // ── Plugin settings clipboard ─────────────────────────────────────────────────
+  pluginClipboard: null,
+  copySlotSettings: (id) => {
+    const slot = get().slots.find(s => s.id === id)
+    if (!slot || !slot.state) return
+    set({ pluginClipboard: { uid: slot.plugin.uid, name: slot.plugin.name, state: slot.state } })
+  },
+  pasteSlotSettings: (id) => {
+    const cb = get().pluginClipboard
+    if (!cb) return
+    const slot = get().slots.find(s => s.id === id)
+    if (!slot || slot.plugin.uid !== cb.uid) return
+    const idx = get().slots.findIndex(s => s.id === id)
+    sendEngineCommand({ cmd: 'set_plugin_state', index: idx, state: cb.state })
+  },
+
+  // ── Update banner ─────────────────────────────────────────────────────────────
+  updateAvailable: null,
+  setUpdateAvailable: (v) => set({ updateAvailable: v }),
 
   // ── Startup loading screen ───────────────────────────────────────────────────
   appLoading:      true,

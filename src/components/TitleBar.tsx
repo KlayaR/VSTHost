@@ -7,10 +7,11 @@ const appWindow = (() => {
 })()
 
 export default function TitleBar() {
-  const bypassAll      = useStore(s => s.bypassAll)
-  const activePresetId = useStore(s => s.activePresetId)
-  const presets        = useStore(s => s.presets)
-  const presetModified = useStore(s => s.presetModified)
+  const bypassAll       = useStore(s => s.bypassAll)
+  const activePresetId  = useStore(s => s.activePresetId)
+  const presets         = useStore(s => s.presets)
+  const presetModified  = useStore(s => s.presetModified)
+  const updateAvailable = useStore(s => s.updateAvailable)
   const activePreset = presets.find(p => p.id === activePresetId)
 
   return (
@@ -31,7 +32,7 @@ export default function TitleBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <VstIcon />
         <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>VSTHost</span>
-        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>v1.0</span>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>v1.3.0</span>
       </div>
 
       <div data-tauri-drag-region style={{ flex: 1 }} />
@@ -60,6 +61,21 @@ export default function TitleBar() {
       )}
 
       <div data-tauri-drag-region style={{ flex: 1 }} />
+
+      {/* Update banner */}
+      {updateAvailable && (
+        <a
+          href={`https://github.com/KlayaR/VSTHost/releases/tag/${updateAvailable}`}
+          target="_blank" rel="noreferrer"
+          style={{
+            fontSize: 10, padding: '2px 10px', borderRadius: 4, textDecoration: 'none',
+            background: 'rgba(91,140,255,0.15)', border: '1px solid var(--accent)',
+            color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap',
+          }}
+        >
+          ↑ {updateAvailable} available
+        </a>
+      )}
 
       {/* Window controls */}
       <div style={{ display: 'flex', gap: 4 }}>

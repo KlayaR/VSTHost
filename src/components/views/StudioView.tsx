@@ -590,20 +590,39 @@ function InputBlock({ inputGain, setInputGain }: { inputGain: number; setInputGa
   )
 }
 
-// Isolated GR meter — subscribes to limiterGr at 30fps without re-rendering OutputBlock
-function LimiterGrMeter() {
-  const gr = useStore(s => s.limiterGr)
-  const pct = Math.min(1, gr) * 100
+// Isolated two-row output meter for the Output block — subscribes to
+// outputLevel + limiterGr at 30fps without re-rendering OutputBlock.
+// Top  : output level, left → right (green/yellow/red)
+// Bottom: limiter GR, right → left (orange) + dB value
+function OutputMeterSection() {
+  const outLevel      = useStore(s => s.outputLevel)
+  const limiterGr     = useStore(s => s.limiterGr)
+  const limiterEnabled = useStore(s => s.limiterEnabled)
+
+  const outPct   = Math.min(100, outLevel * 100)
+  const outColor = outPct > 90 ? 'var(--red)' : outPct > 70 ? 'var(--yellow)' : 'var(--green)'
+
+  const grDb  = limiterEnabled && limiterGr > 0.005
+    ? -20 * Math.log10(Math.max(1e-6, 1 - limiterGr)) : 0
+  const grPct = Math.min(100, (grDb / 24) * 100)
+
   return (
-    <div
-      style={{ width: 60, height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}
-      title={`Limiter gain reduction: ${(gr * 100).toFixed(0)}%`}
-    >
-      <div style={{
-        height: '100%', width: `${pct}%`,
-        background: pct > 60 ? 'var(--red)' : pct > 25 ? 'var(--yellow)' : 'var(--green)',
-        borderRadius: 3, transition: 'width 0.05s',
-      }} />
+    <div style={{ flex: '1 1 80px', minWidth: 60, maxWidth: 220, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Output level: left → right */}
+      <div style={{ height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${outPct}%`, background: outColor, borderRadius: 3, transition: 'width 0.05s' }} />
+      </div>
+      {/* Limiter GR: right → left + dB value */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ flex: 1, height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+          {limiterEnabled && grPct > 0.5 && (
+            <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${grPct}%`, background: 'rgba(255,130,40,0.82)', transition: 'width 0.05s' }} />
+          )}
+        </div>
+        <span style={{ fontSize: 9, fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0, color: grDb > 0.3 ? 'rgba(255,140,50,1)' : 'var(--text-muted)' }}>
+          {grDb > 0.3 ? `−${grDb.toFixed(1)}` : ''}
+        </span>
+      </div>
     </div>
   )
 }
@@ -661,8 +680,7 @@ function OutputBlock({ outputGain, setOutputGain }: { outputGain: number; setOut
           {limiterInputGain > 0 ? '+' : ''}{limiterInputGain.toFixed(1)}
         </span>
 
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>GR</span>
-        <LimiterGrMeter />
+        <OutputMeterSection />
       </div>
     </div>
   )

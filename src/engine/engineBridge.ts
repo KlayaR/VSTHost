@@ -164,6 +164,13 @@ function handleEngineEvent(event: unknown) {
       // Informational; UI does not need to react.
       break
 
+    case 'warning': {
+      const msg = String(e['message'] ?? '')
+      console.warn('[Engine warning]', msg)
+      store.setEngineWarning(msg)
+      break
+    }
+
     case 'error': {
       const msg = String(e['message'] ?? 'Unknown engine error')
       console.error('[Engine]', msg)

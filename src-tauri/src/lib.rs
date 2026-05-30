@@ -159,9 +159,20 @@ fn spawn_engine(app: &AppHandle) {
             return;
         }
 
+        // Check crash-attribution file written by the engine before each load.
+        let attr_msg = {
+            let attr = std::env::var("APPDATA").ok()
+                .map(std::path::PathBuf::from)
+                .map(|d| d.join("VSTHost").join("last_load.txt"));
+            attr.and_then(|p| std::fs::read_to_string(p).ok())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| format!(" (possibly while loading: {})", s.trim()))
+                .unwrap_or_default()
+        };
+
         emit_or_buffer(&app_handle, serde_json::json!({
             "event": "engine_offline",
-            "message": "Audio engine stopped — restarting…"
+            "message": format!("Audio engine stopped{} — restarting…", attr_msg)
         }));
 
         // Brief backoff so we don't hammer a failing device, then respawn.
@@ -281,6 +292,24 @@ fn delete_preset(app: AppHandle, name: String) {
     }
 }
 
+#[tauri::command]
+fn rename_preset(app: AppHandle, old_name: String, new_name: String) -> Result<(), String> {
+    let dir = presets_dir(&app).ok_or("no presets dir")?;
+    let old_path = dir.join(format!("{}.json", sanitize(&old_name)));
+    let new_path = dir.join(format!("{}.json", sanitize(&new_name)));
+    if !old_path.exists() { return Err(format!("Preset '{}' not found", old_name)); }
+    if new_path.exists()  { return Err(format!("A preset named '{}' already exists", new_name)); }
+    // Update the "name" field inside the JSON too
+    let text = std::fs::read_to_string(&old_path).map_err(|e| e.to_string())?;
+    let mut data: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("name".into(), serde_json::Value::String(new_name.clone()));
+    }
+    std::fs::write(&new_path, serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::remove_file(&old_path).map_err(|e| e.to_string())
+}
+
 fn state_file(app: &AppHandle) -> Option<std::path::PathBuf> {
     let dir = app.path().app_config_dir().ok()?;
     let _ = std::fs::create_dir_all(&dir);
@@ -340,6 +369,7 @@ pub fn run() {
             save_preset,
             load_preset,
             delete_preset,
+            rename_preset,
             set_autostart,
             load_state,
             save_state

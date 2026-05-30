@@ -18,6 +18,7 @@ export interface PresetChainSlot {
   identifier: string
   enabled: boolean
   bypassed: boolean
+  gainDb: number
   state?: string
   parameters: { index: number; value: number }[]
 }
@@ -29,6 +30,7 @@ export function serializeChain(slots: PluginSlot[]): PresetChainSlot[] {
     identifier: s.plugin.uid,   // disambiguates shell plugins on reload
     enabled:    s.enabled,
     bypassed:   s.bypassed,
+    gainDb:     s.gainDb ?? 0,
     state:      s.state,        // full plugin state (preferred on load)
     parameters: s.plugin.parameters.map(p => ({
       index: parseInt(p.id, 10),

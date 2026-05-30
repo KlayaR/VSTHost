@@ -32,6 +32,7 @@ export interface PluginSlot {
   editorOpen?: boolean
   state?: string          // base64 plugin state blob (full fidelity)
   loading?: boolean       // optimistic placeholder until the engine confirms
+  gainDb?: number         // per-slot post-plugin gain in dB (0 = unity)
 }
 
 export interface Preset {

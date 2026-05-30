@@ -59,9 +59,20 @@ void PluginChain::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffe
                 buffer.copyFrom(ch, 0, scratch, ch, 0, buffer.getNumSamples());
         }
 
-        // Slot output level for the meter
+        // Per-slot post-plugin gain
+        const float g = slot->gainLin.load();
+        if (std::abs(g - 1.0f) > 0.001f) buffer.applyGain(g);
+
+        // Slot output level for the meter (post-gain)
         slot->level.store(slot->level.load() * 0.8f + buffer.getMagnitude(0, buffer.getNumSamples()) * 0.2f);
     }
+}
+
+void PluginChain::setSlotGain(int index, float gainDb)
+{
+    juce::ScopedReadLock rl(chainLock);
+    if (juce::isPositiveAndBelow(index, slots.size()))
+        slots[index]->gainLin.store(juce::Decibels::decibelsToGain(gainDb));
 }
 
 bool PluginChain::addPlugin(std::unique_ptr<juce::AudioPluginInstance> inst,
@@ -169,6 +180,7 @@ juce::var PluginChain::toVar() const
         obj->setProperty("category",     slot->description.category);
         obj->setProperty("enabled",      slot->enabled);
         obj->setProperty("bypassed",     slot->bypassed);
+        obj->setProperty("gainDb",       juce::Decibels::gainToDecibels(slot->gainLin.load()));
         obj->setProperty("latency",      slot->instance->getLatencySamples());
         obj->setProperty("file",         slot->description.fileOrIdentifier);
         obj->setProperty("identifier",   slot->description.createIdentifierString());

@@ -26,8 +26,8 @@ function SlotMeter({ index, active }: { index: number; active: boolean }) {
 }
 
 export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
-  const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor } = useStore()
-  const { plugin, enabled, bypassed, expanded } = slot
+  const { toggleSlotEnabled, toggleSlotBypassed, toggleSlotExpanded, removeSlot, openEditor, setSlotGain } = useStore()
+  const { plugin, enabled, bypassed, expanded, gainDb = 0 } = slot
   const inactive = !enabled || bypassed || globalBypass
   const accent = inactive ? 'var(--border)' : 'var(--accent)'
 
@@ -73,6 +73,20 @@ export default function PluginSlotRow({ slot, index, globalBypass }: Props) {
         </div>
 
         <SlotMeter index={index} active={!inactive} />
+
+        {/* Per-slot gain trim */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} title={`Slot gain: ${gainDb >= 0 ? '+' : ''}${gainDb.toFixed(1)} dB`}>
+          <input
+            type="range" min={-24} max={24} step={0.5}
+            value={gainDb}
+            onChange={e => setSlotGain(slot.id, parseFloat(e.target.value))}
+            onDoubleClick={() => setSlotGain(slot.id, 0)}
+            style={{ width: 52, accentColor: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--accent)', cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 9.5, color: Math.abs(gainDb) > 0.1 ? 'var(--yellow)' : 'var(--text-muted)', fontFamily: 'var(--mono)', width: 30, textAlign: 'right', flexShrink: 0 }}>
+            {gainDb >= 0 ? '+' : ''}{gainDb.toFixed(1)}
+          </span>
+        </div>
 
         {/* Open Editor — the primary action */}
         <button

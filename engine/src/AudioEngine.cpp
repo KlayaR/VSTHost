@@ -102,6 +102,18 @@ juce::String AudioEngine::setVirtualOutput(const juce::String& deviceName)
     sendDm.addAudioCallback(sendCallback.get());
     virtualOutName = deviceName;
     sendActive.store(true);
+
+    // Warn (but don't fail) if the virtual output opened at a different sample
+    // rate than the main device — the send will work but audio will drift/pitch-shift.
+    if (auto* sendDev = sendDm.getCurrentAudioDevice())
+    {
+        double sendSr = sendDev->getCurrentSampleRate();
+        double mainSr = getCurrentSampleRate();
+        if (mainSr > 0 && std::abs(sendSr - mainSr) > 1.0)
+            return "warning:Virtual output opened at " + juce::String((int)sendSr)
+                   + " Hz but your main device runs at " + juce::String((int)mainSr)
+                   + " Hz — set them to match in Windows Sound settings to avoid drift.";
+    }
     return {};
 }
 

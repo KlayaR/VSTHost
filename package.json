@@ -1,6 +1,6 @@
 {
   "name": "vsthost",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Lightweight VST3 microphone processing host",
   "type": "module",
   "scripts": {

@@ -17,7 +17,8 @@ struct ChainSlot
     juce::String uid;           // unique slot ID
     bool enabled  = true;
     bool bypassed = false;
-    std::atomic<float> level { 0.0f };   // output level for the slot meter
+    std::atomic<float> level   { 0.0f };   // output level for the slot meter
+    std::atomic<float> gainLin { 1.0f };   // per-slot post-plugin gain (linear)
     std::unique_ptr<ParamListener> listener;
 
     ChainSlot(std::unique_ptr<juce::AudioPluginInstance> inst,
@@ -45,6 +46,7 @@ public:
     void movePlugin(int fromIndex, int toIndex);
     void setEnabled(int index, bool v);
     void setBypassed(int index, bool v);
+    void setSlotGain(int index, float gainDb);
 
     int              numPlugins()         const;
     const ChainSlot* getSlot(int index)   const;

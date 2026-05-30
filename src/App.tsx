@@ -77,38 +77,50 @@ export default function App() {
       {showSavePreset && <SavePresetModal />}
       {showShortcuts && <ShortcutsModal />}
       <ErrorToast />
+      <WarningToast />
       <TooltipLayer />
       <LoadingScreen />
     </div>
   )
 }
 
-function ErrorToast() {
-  const engineError = useStore(s => s.engineError)
-  const setEngineError = useStore(s => s.setEngineError)
-  React.useEffect(() => {
-    if (engineError) {
-      const t = setTimeout(() => setEngineError(null), 6000)
-      return () => clearTimeout(t)
-    }
-  }, [engineError, setEngineError])
-  if (!engineError) return null
+function Toast({ msg, color, onClose, bottom }: { msg: string; color: string; onClose: () => void; bottom: number }) {
   return (
     <div style={{
-      position: 'fixed', bottom: 36, left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--bg-elevated)', border: '1px solid var(--red)',
-      borderRadius: 8, padding: '10px 14px', maxWidth: 480, zIndex: 200,
+      position: 'fixed', bottom, left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--bg-elevated)', border: `1px solid ${color}`,
+      borderRadius: 8, padding: '10px 14px', maxWidth: 520, zIndex: 200,
       display: 'flex', alignItems: 'center', gap: 10,
       boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
     }}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-        <circle cx="8" cy="8" r="6.5" stroke="var(--red)" strokeWidth="1.4" />
-        <path d="M8 4.5v4M8 11v.1" stroke="var(--red)" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.4" />
+        <path d="M8 4.5v4M8 11v.1" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
       </svg>
-      <span style={{ fontSize: 11.5, color: 'var(--text-primary)', lineHeight: 1.4 }}>{engineError}</span>
-      <button className="btn-icon" onClick={() => setEngineError(null)} style={{ flexShrink: 0, color: 'var(--text-muted)' }}>
+      <span style={{ fontSize: 11.5, color: 'var(--text-primary)', lineHeight: 1.4 }}>{msg}</span>
+      <button className="btn-icon" onClick={onClose} style={{ flexShrink: 0, color: 'var(--text-muted)' }}>
         <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
       </button>
     </div>
   )
+}
+
+function ErrorToast() {
+  const engineError    = useStore(s => s.engineError)
+  const setEngineError = useStore(s => s.setEngineError)
+  React.useEffect(() => {
+    if (engineError) { const t = setTimeout(() => setEngineError(null), 8000); return () => clearTimeout(t) }
+  }, [engineError, setEngineError])
+  if (!engineError) return null
+  return <Toast msg={engineError} color="var(--red)" onClose={() => setEngineError(null)} bottom={36} />
+}
+
+function WarningToast() {
+  const engineWarning    = useStore(s => s.engineWarning)
+  const setEngineWarning = useStore(s => s.setEngineWarning)
+  React.useEffect(() => {
+    if (engineWarning) { const t = setTimeout(() => setEngineWarning(null), 10000); return () => clearTimeout(t) }
+  }, [engineWarning, setEngineWarning])
+  if (!engineWarning) return null
+  return <Toast msg={engineWarning} color="var(--yellow)" onClose={() => setEngineWarning(null)} bottom={90} />
 }

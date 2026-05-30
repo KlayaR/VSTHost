@@ -320,76 +320,151 @@ private:
         editors.erase(slot->uid);
     }
 
-    // Rebuild a chain from preset data, loading each plugin asynchronously and
-    // in order (sync VST3 instantiation is unreliable).
-    void loadChainAsync(juce::Array<juce::var> slots, int index)
+    // ── Parallel chain load ───────────────────────────────────────────────────
+    // Fires all createPluginInstanceAsync calls simultaneously (each spawns its
+    // own thread inside JUCE). Callbacks arrive on the message thread so the
+    // results vector is written serially — no additional locking needed.
+    // Plugins are added to the chain in slot order once all have completed.
+
+    struct ParallelLoadState
     {
-        if (index >= slots.size())
+        struct Result {
+            std::unique_ptr<juce::AudioPluginInstance> inst;
+            juce::PluginDescription desc;
+            bool enabled  = true;
+            bool bypassed = false;
+            float gainDb  = 0.0f;
+        };
+        std::vector<Result>        results;
+        std::atomic<int>           remaining { 0 };
+        std::atomic<int>           completed { 0 };
+        int                        total     = 0;
+        ParallelLoadState(int n) : results(n), total(n) {}
+    };
+
+    void loadChainParallel(const juce::Array<juce::var>& slots)
+    {
+        const int total = slots.size();
+        if (total == 0)
         {
             engine->clearParamDirty();
-            engine->setLoadingChain(false);   // re-enable change notifications
+            engine->setLoadingChain(false);
             sendChain();
-            ipc->sendEvent(makeEvent("load_done"));  // UI: dismiss loading screen
+            ipc->sendEvent(makeEvent("load_done"));
             return;
         }
 
-        const juce::var slot = slots[index];
+        // Write crash-attribution file: which plugins were being loaded.
+        // Cleared when load finishes; if the engine crashes, it persists so
+        // the Rust restart message can surface it.
+        {
+            juce::File attrFile = juce::File::getSpecialLocation(
+                juce::File::userApplicationDataDirectory)
+                .getChildFile("VSTHost/last_load.txt");
+            attrFile.getParentDirectory().createDirectory();
+            juce::StringArray names;
+            for (const auto& s : slots)
+                names.add(s["file"].toString().fromLastOccurrenceOf("\\", false, false)
+                                              .fromLastOccurrenceOf("/",  false, false));
+            attrFile.replaceWithText(names.joinIntoString(", "));
+        }
 
-        // Tell the UI which plugin we're loading, for the startup progress bar.
-        {
-            auto* e = makeEvent("load_progress");
-            e->setProperty("index", index + 1);
-            e->setProperty("total", slots.size());
-            e->setProperty("name",  slot["file"].toString());
-            ipc->sendEvent(e);
-        }
-        juce::PluginDescription desc;
-        if (!engine->scanner().describePlugin(slot["file"].toString(), slot["identifier"].toString(), desc))
-        {
-            sendError("Could not describe: " + slot["file"].toString());
-            loadChainAsync(slots, index + 1);
-            return;
-        }
+        auto state = std::make_shared<ParallelLoadState>(total);
+        state->remaining.store(total);
 
         double sr = engine->getCurrentSampleRate(); if (sr <= 0) sr = 48000.0;
         int    bs = engine->getCurrentBufferSize(); if (bs <= 0) bs = 512;
 
-        engine->scanner().getFormatManager().createPluginInstanceAsync(
-            desc, sr, bs,
-            [this, slots, index, slot, desc](std::unique_ptr<juce::AudioPluginInstance> inst,
-                                             const juce::String& err)
+        for (int i = 0; i < total; ++i)
+        {
+            const juce::var slot = slots[i];
+            juce::PluginDescription desc;
+
+            if (!engine->scanner().describePlugin(
+                    slot["file"].toString(), slot["identifier"].toString(), desc))
             {
-                if (!inst)
-                    sendError("Load failed (" + desc.name + "): " + err);
-                if (inst)
+                sendError("Could not describe: " + slot["file"].toString());
+                int done = ++state->completed;
+                auto* e = makeEvent("load_progress");
+                e->setProperty("index", done);
+                e->setProperty("total", total);
+                e->setProperty("name",  "(not found)");
+                ipc->sendEvent(e);
+                if (--state->remaining == 0) finishParallelLoad(slots, state);
+                continue;
+            }
+
+            state->results[(size_t)i].desc     = desc;
+            state->results[(size_t)i].enabled  = (bool)slot.getProperty("enabled",  true);
+            state->results[(size_t)i].bypassed = (bool)slot.getProperty("bypassed", false);
+            state->results[(size_t)i].gainDb   = (float)slot.getProperty("gainDb",  0.0f);
+
+            engine->scanner().getFormatManager().createPluginInstanceAsync(
+                desc, sr, bs,
+                [this, i, slot, desc, state, total, slots](
+                    std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
                 {
-                    // Prefer the full state blob (complete fidelity); fall back
-                    // to individual normalized parameters.
-                    const juce::String state = slot["state"].toString();
-                    if (state.isNotEmpty())
+                    if (inst)
                     {
-                        juce::MemoryBlock mb;
-                        if (mb.fromBase64Encoding(state))
-                            inst->setStateInformation(mb.getData(), (int) mb.getSize());
-                    }
-                    else if (const auto* params = slot["parameters"].getArray())
-                    {
-                        for (const auto& p : *params)
+                        const juce::String stateStr = slot["state"].toString();
+                        if (stateStr.isNotEmpty())
                         {
-                            int idx = (int)p["index"];
-                            auto& ps = inst->getParameters();
-                            if (juce::isPositiveAndBelow(idx, ps.size()))
-                                ps[idx]->setValue((float)p["value"]);
+                            juce::MemoryBlock mb;
+                            if (mb.fromBase64Encoding(stateStr))
+                                inst->setStateInformation(mb.getData(), (int)mb.getSize());
                         }
+                        else if (const auto* params = slot["parameters"].getArray())
+                        {
+                            for (const auto& p : *params)
+                            {
+                                int idx = (int)p["index"];
+                                auto& ps = inst->getParameters();
+                                if (juce::isPositiveAndBelow(idx, ps.size()))
+                                    ps[idx]->setValue((float)p["value"]);
+                            }
+                        }
+                        state->results[(size_t)i].inst = std::move(inst);
+                    }
+                    else
+                    {
+                        sendError("Load failed (" + desc.name + "): " + err);
                     }
 
-                    engine->chain().addPlugin(std::move(inst), desc);
-                    int slotIdx = engine->chain().numPlugins() - 1;
-                    engine->chain().setEnabled (slotIdx, (bool) slot.getProperty("enabled",  true));
-                    engine->chain().setBypassed(slotIdx, (bool) slot.getProperty("bypassed", false));
-                }
-                loadChainAsync(slots, index + 1);   // next plugin
-            });
+                    int done = ++state->completed;
+                    auto* e = makeEvent("load_progress");
+                    e->setProperty("index", done);
+                    e->setProperty("total", total);
+                    e->setProperty("name",  desc.name);
+                    ipc->sendEvent(e);
+
+                    if (--state->remaining == 0) finishParallelLoad(slots, state);
+                });
+        }
+    }
+
+    void finishParallelLoad(const juce::Array<juce::var>& /*slots*/,
+                            std::shared_ptr<ParallelLoadState> state)
+    {
+        // Add plugins in slot order (preserves chain order regardless of which
+        // async callback arrived first).
+        for (auto& r : state->results)
+        {
+            if (!r.inst) continue;
+            engine->chain().addPlugin(std::move(r.inst), r.desc);
+            int idx = engine->chain().numPlugins() - 1;
+            engine->chain().setEnabled (idx, r.enabled);
+            engine->chain().setBypassed(idx, r.bypassed);
+            if (std::abs(r.gainDb) > 0.01f) engine->chain().setSlotGain(idx, r.gainDb);
+        }
+
+        engine->clearParamDirty();
+        engine->setLoadingChain(false);
+        sendChain();
+        ipc->sendEvent(makeEvent("load_done"));
+
+        // Clear crash-attribution file — load completed successfully.
+        juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("VSTHost/last_load.txt").deleteFile();
     }
 
     // ── IPC command dispatcher ────────────────────────────────────────────────
@@ -450,9 +525,16 @@ private:
         }
         else if (type == "set_virtual_output")
         {
-            auto err = engine->setVirtualOutput(cmd["name"].toString());
-            if (err.isEmpty()) sendDeviceList();
-            else sendError(err);
+            auto result = engine->setVirtualOutput(cmd["name"].toString());
+            sendDeviceList();
+            if (result.startsWith("warning:"))
+            {
+                auto* e = makeEvent("warning");
+                e->setProperty("message", result.substring(8));
+                ipc->sendEvent(e);
+            }
+            else if (result.isNotEmpty())
+                sendError(result);
         }
         else if (type == "set_input_channel")
         {
@@ -558,6 +640,10 @@ private:
             engine->chain().setEnabled((int)cmd["index"], (bool)cmd["value"]);
             sendChain();
         }
+        else if (type == "set_slot_gain")
+        {
+            engine->chain().setSlotGain((int)cmd["index"], (float)cmd["gainDb"]);
+        }
         else if (type == "set_plugin_bypassed")
         {
             engine->chain().setBypassed((int)cmd["index"], (bool)cmd["value"]);
@@ -590,7 +676,7 @@ private:
             juce::Array<juce::var> slots;
             if (const auto* arr = cmd["chain"].getArray())
                 slots = *arr;
-            loadChainAsync(slots, 0);   // async = reliable VST3 instantiation
+            loadChainParallel(slots);   // parallel = fast + reliable VST3
         }
 
         // ── Plugin editor windows ─────────────────────────────────────────────

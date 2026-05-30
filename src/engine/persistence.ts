@@ -24,6 +24,7 @@ function snapshot() {
     autoBypass:       s.autoBypass,
     scanPaths:        s.scanPaths,
     availablePlugins: s.availablePlugins,
+    favoriteIds:      Array.from(s.favoriteIds),   // Set → array for JSON
     routing:          s.routing,
     activePresetId:   s.activePresetId,
   }

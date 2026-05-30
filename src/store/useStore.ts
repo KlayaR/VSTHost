@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { invoke } from '@tauri-apps/api/core'
 import type { NavSection, Preset, PluginSlot, RoutingSettings, Theme, Plugin } from '../types'
 import { DEFAULT_ROUTING } from '../data/mockData'
 import { sendEngineCommand } from '../engine/engineBridge'
@@ -23,6 +24,7 @@ function rawToSlot(raw: Record<string, unknown>): PluginSlot {
     bypassed:  raw['bypassed'] === true,
     expanded:  false,
     state:     raw['state'] ? String(raw['state']) : undefined,
+    gainDb:    typeof raw['gainDb'] === 'number' ? raw['gainDb'] : 0,
     plugin: {
       id:           String(raw['identifier'] ?? raw['file']),
       file:         String(raw['file'] ?? ''),
@@ -64,6 +66,8 @@ interface AppState {
   setScanFinished: () => void
   engineError: string | null
   setEngineError: (msg: string | null) => void
+  engineWarning: string | null
+  setEngineWarning: (msg: string | null) => void
 
   // Rack
   slots: PluginSlot[]
@@ -88,6 +92,7 @@ interface AppState {
   toggleSlotEnabled:  (id: string) => void
   toggleSlotBypassed: (id: string) => void
   toggleSlotExpanded: (id: string) => void
+  setSlotGain:        (id: string, gainDb: number) => void
   removeSlot:         (id: string) => void
   addPluginToSlot:    (plugin: Plugin, index?: number) => void
   reorderSlots:       (from: number, to: number) => void
@@ -104,12 +109,14 @@ interface AppState {
   savePreset:      (name: string, description: string) => void
   updatePreset:    () => void
   deletePreset:    (id: string) => void
+  renamePreset:    (id: string, newName: string) => void
   duplicatePreset: (id: string) => void
   refreshPresets:  () => void
   setEnginePresets:() => void
 
   // Plugin catalog
   availablePlugins: Plugin[]
+  favoriteIds:      Set<string>   // persisted separately so scan doesn't clear them
   toggleFavorite:   (pluginId: string) => void
   setScannedPlugins:(raw: unknown[]) => void
   pluginBlacklist:  string[]
@@ -179,6 +186,8 @@ export const useStore = create<AppState>((set, get) => ({
   setScanFinished: () => set({ engineScanProgress: null }),
   engineError: null,
   setEngineError: (msg) => set({ engineError: msg }),
+  engineWarning: null,
+  setEngineWarning: (msg) => set({ engineWarning: msg }),
 
   slots:       [],
   inputGain:   0,
@@ -230,6 +239,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   toggleSlotExpanded: (id) =>
     set(s => ({ slots: s.slots.map(sl => sl.id === id ? { ...sl, expanded: !sl.expanded } : sl) })),
+
+  setSlotGain: (id, gainDb) => {
+    const idx = get().slots.findIndex(s => s.id === id)
+    if (idx < 0) return
+    set(s => ({ slots: s.slots.map(sl => sl.id === id ? { ...sl, gainDb } : sl), presetModified: true }))
+    sendEngineCommand({ cmd: 'set_slot_gain', index: idx, gainDb })
+  },
 
   removeSlot: (id) => {
     const idx = get().slots.findIndex(s => s.id === id)
@@ -376,6 +392,17 @@ export const useStore = create<AppState>((set, get) => ({
     set(s => ({ activePresetId: s.activePresetId === id ? null : s.activePresetId }))
   },
 
+  renamePreset: (id, newName) => {
+    const preset = get().presets.find(p => p.id === id)
+    if (!preset) return
+    invoke('rename_preset', { oldName: preset.name, newName })
+      .then(() => {
+        get().refreshPresets()
+        if (get().activePresetId === id) set({ activePresetId: `eng-${newName}` })
+      })
+      .catch((e: unknown) => get().setEngineError(String(e)))
+  },
+
   duplicatePreset: (id) => {
     const preset = get().presets.find(p => p.id === id)
     if (!preset) return
@@ -419,13 +446,22 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   availablePlugins: [],
+  favoriteIds: new Set<string>(),
   toggleFavorite: (id) => {
-    set(s => ({ availablePlugins: s.availablePlugins.map(p => p.id === id ? { ...p, favorite: !p.favorite } : p) }))
+    // Update the canonical favoriteIds set (survives rescan) and mirror to availablePlugins.
+    const favs = new Set(get().favoriteIds)
+    if (favs.has(id)) favs.delete(id); else favs.add(id)
+    set(s => ({
+      favoriteIds: favs,
+      availablePlugins: s.availablePlugins.map(p => p.id === id ? { ...p, favorite: !p.favorite } : p),
+    }))
     schedulePersist()
   },
 
   setScannedPlugins: (raw) => {
-    const favs = new Set(get().availablePlugins.filter(p => p.favorite).map(p => p.id))
+    // Use the persisted favoriteIds (not just current availablePlugins) so that
+    // favorites survive a rescan even when the list is fully rebuilt.
+    const favs = get().favoriteIds
     const seen = new Set<string>()
     const plugins: Plugin[] = (raw as Record<string, unknown>[])
       .filter(r => !r['isInstrument'])           // mic processing → effects only
@@ -525,6 +561,7 @@ export const useStore = create<AppState>((set, get) => ({
       autoBypass:       r.autoBypass ?? get().autoBypass,
       scanPaths:        r.scanPaths ?? get().scanPaths,
       availablePlugins: (r.availablePlugins as Plugin[]) ?? get().availablePlugins,
+      favoriteIds:      new Set<string>((r as Record<string, unknown>)['favoriteIds'] as string[] ?? []),
       routing:          { ...get().routing, ...(r.routing ?? {}) },
       activePresetId:   r.activePresetId ?? null,
       pendingRestore:   !!r.activePresetId,

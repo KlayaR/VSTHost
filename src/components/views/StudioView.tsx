@@ -330,6 +330,7 @@ function SidePanel() {
   const activePresetId    = useStore(s => s.activePresetId)
   const loadPreset        = useStore(s => s.loadPreset)
   const deletePreset      = useStore(s => s.deletePreset)
+  const renamePreset      = useStore(s => s.renamePreset)
   const updatePreset      = useStore(s => s.updatePreset)
   const presetModified    = useStore(s => s.presetModified)
   const availablePlugins  = useStore(s => s.availablePlugins)
@@ -338,6 +339,8 @@ function SidePanel() {
   const toggleFavorite    = useStore(s => s.toggleFavorite)
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState('All')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameVal,  setRenameVal]  = useState('')
   const scanning = engineScanProgress !== null
 
   // Distinct categories present in the scanned plugins (from VST3 metadata)
@@ -377,11 +380,37 @@ function SidePanel() {
             </button>
           )}
           {activePresetId && (
+            <button className="btn-icon" data-tip="Rename preset" onClick={() => {
+              const p = presets.find(x => x.id === activePresetId)
+              if (p) { setRenamingId(p.id); setRenameVal(p.name) }
+            }} style={{ flexShrink: 0 }}>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path d="M2 10h9M8.5 2.5l2 2-6 6H2.5v-2l6-6z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          {activePresetId && (
             <button className="btn-icon" data-tip="Delete preset" onClick={() => activePresetId && deletePreset(activePresetId)} style={{ flexShrink: 0 }}>
               <svg width="13" height="13" viewBox="0 0 11 13" fill="none"><path d="M1 3h9M4 3V2h3v1M2 3l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           )}
         </div>
+        {renamingId && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <input
+              autoFocus
+              value={renameVal}
+              onChange={e => setRenameVal(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && renameVal.trim()) { renamePreset(renamingId, renameVal.trim()); setRenamingId(null) }
+                if (e.key === 'Escape') setRenamingId(null)
+              }}
+              style={{ flex: 1, fontSize: 11 }}
+            />
+            <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => { if (renameVal.trim()) { renamePreset(renamingId, renameVal.trim()); setRenamingId(null) } }}>OK</button>
+            <button className="btn btn-ghost"   style={{ fontSize: 11 }} onClick={() => setRenamingId(null)}>✕</button>
+          </div>
+        )}
       </div>
 
       {/* Plugins */}
